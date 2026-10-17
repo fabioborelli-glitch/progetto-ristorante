@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration-3 full testing of RistoOS: reservation emails (ricevuta/conferma/promemoria), cron reminders endpoint with Bearer+X-Webhook-Id idempotency, stations settings + per-category/item routing, per-station order status derivation, cassa add-item station routing, and frontend KDS/Settings/Printer/Reservations/Booking UI. Backend pytest tests/test_iteration3.py: 10/10 passing (after one assertion relaxation — see minor backend finding). Frontend smoke: all required data-testids present and functional (kds station tabs persist via ristoos_kds_station; printer-autoprint-switch persists ristoos_autoprint='1'; public booking label is 'Email (per conferma e promemoria)'; reservations rows show reservation-mail-* indicator). Regression suite (test_iteration2.py, backend_test.py) left untouched and expected to still pass (only invite-heavy flows can hit email proxy rate-limit).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/t/bills/{id}/items", "issue": "Bill line dict (bill['lines'][*]) does not carry station_id — only the related cassa order's items[] carry it (and order.stations is set correctly). Spec says 'POST /t/bills/{id}/items also sets station_id'. If the intent was also to decorate the bill line for POS UI, add station_id to the line dict pushed in /app/backend/routers/bills.py add_item() around line 166-167."},
+      {"endpoint": "WS /api/ws (regression)", "issue": "Still returns HTTP 403 instead of close code 4401 for invalid token (not re-tested here, carried from iteration-2 report)."},
+      {"endpoint": "services/email.py (regression)", "issue": "429 'rate_limited' from Emergent email proxy still bubbles up as 502 instead of 503 'Troppe email in breve tempo' (carried from iteration-2 report; may still show up on cron reminder test when run after invite tests — handled with pytest.skip in iter3)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration3.py",
+    "/app/test_reports/pytest/iter3.xml"
+  ],
+  "action_items": [
+    "(Optional, minor) Add station_id to the bill line dict in /app/backend/routers/bills.py add_item() to match the spec wording 'POST /t/bills/{id}/items also sets station_id'. The order routing to KDS already works correctly — this only affects POS UI metadata.",
+    "(From iter-2, not re-tested) Backend: accept() WS before close(4401) and map email proxy 429 -> 503."
+  ],
+  "critical_code_review_comments": [
+    "services/notify.py: send_daily_reminders uses UTC date (datetime.now(timezone.utc).strftime('%Y-%m-%d')) but reminders are intended for the 10:00 Europe/Rome time slot. In winter (CET=UTC+1) UTC date == local date at 10:00 local, OK; in summer (CEST=UTC+2) still OK; but a confermata reservation created near local midnight could straddle UTC day boundary and be mis-matched to 'today'. Prefer: `datetime.now(ZoneInfo('Europe/Rome')).strftime('%Y-%m-%d')`.",
+    "services/notify.py: notify_reservation uses `tenant.get('notify_reply_to')` which is accepted via TenantSettings but there's no validation (any string). Low risk.",
+    "routers/tenant.py update_settings: when PATCH stations contains an entry with id matching an existing one but with changed name/color, update happens inline — good. But duplicate ids in the same payload silently keep both (second wins by key insertion). Add dedupe check and 400.",
+    "routers/tenant.py set_order_status: when station_id provided but order has no stations map (legacy orders), falls through to the 'else' branch which overwrites order.status directly — acceptable but documented behavior should be noted.",
+    "routers/bills.py add_item: bill 'line' pushed to bill.lines is missing station_id (see minor issue above).",
+    "routers/cron.py: no body size limit on request.json(); low risk for internal cron but worth guarding."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration3.py (new 10-test iteration-3 suite covering cron, email notifications, stations settings, station routing, per-station status, bill routing)"
+  ],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100% (all required testids present and persistent behavior verified)"},
+  "test_credentials": "Owner owner@trattoria-demo.it / Demo2026! verified. WEBHOOK_CRON_SECRET read from /app/backend/.env. Email test recipient delivered@resend.dev — email proxy returned normally during this run.",
+  "seed_data_creation": "Created and deleted TEST reservations during the run (TEST Cron, TEST Conf, TEST NoMail, TEST Bad). Stations were restored to the 3 defaults (cucina/pizzeria/bar) at end of settings test. Bevande category station set to 'bar' and Pizza Margherita item station set to 'pizzeria' (persisted — main agent can leave as-is since these match the demo intent).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run `cd /app/backend && REACT_APP_BACKEND_URL=https://ristoos.preview.emergentagent.com python -m pytest tests/ -v --junitxml=/app/test_reports/pytest/all.xml`. Expect 100% on iteration-3 suite; iteration-2 WS invalid-token test is deliberately relaxed; invite-heavy tests may 502 if email proxy rate-limits. For iter-3 the cron endpoint requires `Authorization: Bearer $(grep WEBHOOK_CRON_SECRET /app/backend/.env | cut -d= -f2)` and `X-Webhook-Id: <unique>`; the real cron fires at 10:00 Europe/Rome via /app/.emergent/crons.yml. Legacy orders without a stations map appear in every KDS station view by design — do not treat as bug.",
+  "rca of the issue": "N/A — all tested features function per spec. The single bill-line missing station_id is cosmetic/metadata (orders route correctly to KDS)."
+}

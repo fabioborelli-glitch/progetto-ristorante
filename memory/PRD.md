@@ -39,19 +39,24 @@ Scelte utente (giugno 2026): MVP = **Prenotazioni + piantina sala** e **Menu dig
 - **Realtime WebSocket** `/api/ws`: hub per tenant; eventi su ordini, tavoli, conti, prenotazioni. KDS, Sala, Cassa, Prenotazioni si aggiornano live (polling di fallback 20–30s). Indicatori "Live".
 - **Upload immagini** (Emergent Object Storage): foto piatti e logo da telefono/fotocamera, serviti da `/api/files/{id}`; logo mostrato nel menu cliente.
 
+## Implementato (18/06/2026) — iterazione 3
+- **Email prenotazioni** (Resend gestito): ricevuta alla richiesta online, conferma quando lo staff conferma, promemoria automatico alle 10:00 (Europe/Rome) via cron piattaforma `.emergent/crons.yml` → `POST /api/cron/reservation-reminders` (Bearer `WEBHOOK_CRON_SECRET`, idempotente per `X-Webhook-Id`, lavoro in background). Reinvio manuale da scheda prenotazione; indicatori stato email in lista.
+- **Stampa scontrini**: stampa di sistema 80mm (HTML print) e Bluetooth ESC/POS via Web Bluetooth (Chrome) con generatore ESC/POS client-side, stampa di prova, auto-stampa alla chiusura conto (impostazione per dispositivo). Il backend è in cloud: nessuna stampa diretta LAN (limite noto).
+- **Reparti cucina**: reparti per tenant (default Cucina/Pizzeria/Bar, editor in Impostazioni), assegnazione per categoria o per piatto, righe ordine con `station_id`, stato per reparto (`order.stations`) con derivazione stato ordine, KDS filtrabile per postazione (persistente sul tablet) con bump per reparto.
+
 ## Backlog prioritario
 ### P0 (prossimo)
 - Pagamenti Stripe (acconto prenotazione, paga al tavolo via QR sul conto)
-- Notifiche email prenotazione al cliente (conferma / promemoria)
 ### P1
 - Notifiche WhatsApp (Twilio), menu multilingua completo, eliminazione tenant, audit log
-- Stampa scontrino su stampante termica / integrazione RT
+- Integrazione RT fiscale (Epson/Custom) per corrispettivi
+- Promemoria "3 ore prima" come opzione per tenant
 ### P2 (Fase 2/3 del piano)
 - Magazzino + food cost, staff e turni, RBAC granulare, consolidato multi-locale
-- Fatturazione elettronica SDI (Acube), RT corrispettivi
+- Fatturazione elettronica SDI (Acube)
 - App nativa camerieri, CRM/fidelity, AI suggerimenti menu
 
 ## Test
-- Report: /app/test_reports/iteration_1.json, /app/test_reports/iteration_2.json
-- Suite: `cd /app/backend && python -m pytest tests/ -q` (gli invite test possono dare 503 se il proxy email è in rate-limit)
+- Report: /app/test_reports/iteration_1.json … iteration_3.json
+- Suite: `cd /app/backend && python -m pytest tests/ -q` (test email possono dare 503 per rate-limit del proxy)
 - Credenziali: /app/memory/test_credentials.md

@@ -164,7 +164,7 @@ async def add_item(bill_id: str, body: AddItem, p: Principal = Depends(require_t
              "source": "cassa", "created_at": now_iso(), "updated_at": now_iso()}
     await db.orders.insert_one(order)
     line = {"key": f"{order['_id']}:0", "order_id": order["_id"], "item_id": item["_id"], "name": item["name"],
-            "variant": body.variant, "qty": qty, "price": round(price, 2)}
+            "variant": body.variant, "qty": qty, "price": round(price, 2), "station_id": sid}
     res = await db.bills.find_one_and_update({"_id": bill_id}, {"$push": {"lines": line}}, return_document=True)
     await hub.emit(p.tenant_id, "orders_changed")
     await hub.emit(p.tenant_id, "bills_changed")
