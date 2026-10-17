@@ -60,7 +60,7 @@ async def list_open(p: Principal = Depends(require_tenant())):
 @router.get("/history")
 async def history(date: Optional[str] = None, p: Principal = Depends(require_tenant())):
     date = date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    bills = await db.bills.find(tq(p, {"status": "chiuso", "closed_at": {"$gte": date, "$lt": date + "T99"}})).sort("closed_at", -1).to_list(500)
+    bills = await db.bills.find(tq(p, {"status": "chiuso", "closed_at": {"$gte": date + "T00:00:00", "$lte": date + "T23:59:59.999999+00:00"}})).sort("closed_at", -1).to_list(500)
     res = [out(b) for b in bills]
     by_method = {}
     for b in res:
@@ -148,7 +148,9 @@ async def add_item(bill_id: str, body: AddItem, p: Principal = Depends(require_t
         if not v:
             raise HTTPException(status_code=400, detail="Variante non valida")
         price += v["price_delta"]
-    qty = max(1, body.qty)
+    if body.qty < 1:
+        raise HTTPException(status_code=400, detail="Quantità non valida")
+    qty = body.qty
     order = {"_id": new_id(), "tenant_id": p.tenant_id, "table_id": bill["table_id"], "table_name": bill["table_name"],
              "customer_name": "Cassa", "notes": "", "bill_id": bill_id,
              "items": [{"item_id": item["_id"], "name": item["name"], "qty": qty, "variant": body.variant,

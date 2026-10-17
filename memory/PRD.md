@@ -33,23 +33,25 @@ Scelte utente (giugno 2026): MVP = **Prenotazioni + piantina sala** e **Menu dig
 - Impostazioni: dati locale, fasce orarie, capienza, team (crea/elimina utenti, ruoli ≤ proprio)
 - Seed: superadmin + tenant demo "Trattoria da Fabio" con sale, tavoli, menu, prenotazioni
 
+## Implementato (18/06/2026) — iterazione 2
+- **Cassa (POS)** `/cassa`: apertura conto per tavolo (aggrega automaticamente gli ordini QR), aggiunta piatti da cassa (con invio in cucina opzionale), sconti % / €, split per piatti (conto separato) e "alla romana" (calcolo quota), incassi contanti / carta / misto con calcolo resto, chiusura conto con numerazione progressiva anno/N, scontrino non fiscale PDF (reportlab, 80mm, senza IVA), preconto, storico e chiusura di giornata per metodo di pagamento. Tavolo → libero alla chiusura di tutti i conti. Dashboard incasso = conti chiusi.
+- **Inviti via email** (Resend gestito Emergent): owner/manager invitano staff; super-admin crea tenant con invito owner (o password manuale). Pagina pubblica `/invito/{token}` per attivare account. Token 7 giorni, monouso.
+- **Realtime WebSocket** `/api/ws`: hub per tenant; eventi su ordini, tavoli, conti, prenotazioni. KDS, Sala, Cassa, Prenotazioni si aggiornano live (polling di fallback 20–30s). Indicatori "Live".
+- **Upload immagini** (Emergent Object Storage): foto piatti e logo da telefono/fotocamera, serviti da `/api/files/{id}`; logo mostrato nel menu cliente.
+
 ## Backlog prioritario
 ### P0 (prossimo)
-- POS cassa: apertura/chiusura conto, split bill, sconti, scontrino PDF non fiscale
-- Inviti owner/staff via email (ora password iniziale impostata da chi crea)
+- Pagamenti Stripe (acconto prenotazione, paga al tavolo via QR sul conto)
+- Notifiche email prenotazione al cliente (conferma / promemoria)
 ### P1
-- Pagamenti Stripe (acconto prenotazione, paga al tavolo)
-- Notifiche email (Resend) / WhatsApp (Twilio) per prenotazioni
-- Upload immagini menu/logo su Object Storage (ora solo URL)
-- Realtime WebSocket per KDS e sala
-- Menu multilingua completo (ora solo nome EN)
-- Eliminazione tenant, audit log
+- Notifiche WhatsApp (Twilio), menu multilingua completo, eliminazione tenant, audit log
+- Stampa scontrino su stampante termica / integrazione RT
 ### P2 (Fase 2/3 del piano)
 - Magazzino + food cost, staff e turni, RBAC granulare, consolidato multi-locale
 - Fatturazione elettronica SDI (Acube), RT corrispettivi
 - App nativa camerieri, CRM/fidelity, AI suggerimenti menu
 
 ## Test
-- Report: /app/test_reports/iteration_1.json (backend 27/28 → lockout fix applicato, frontend 100% smoke)
-- Suite regressione: `cd /app/backend && python -m pytest tests/backend_test.py -v`
+- Report: /app/test_reports/iteration_1.json, /app/test_reports/iteration_2.json
+- Suite: `cd /app/backend && python -m pytest tests/ -q` (gli invite test possono dare 503 se il proxy email è in rate-limit)
 - Credenziali: /app/memory/test_credentials.md

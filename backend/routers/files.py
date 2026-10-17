@@ -5,7 +5,7 @@ from services.storage import put_object, get_object, APP_NAME
 
 router = APIRouter(tags=["files"])
 
-ALLOWED = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif", "image/heic": "heic"}
+ALLOWED = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif"}
 MAX_BYTES = 8 * 1024 * 1024
 
 

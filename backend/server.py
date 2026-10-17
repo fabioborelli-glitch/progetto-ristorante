@@ -45,12 +45,14 @@ async def ws_endpoint(ws: WebSocket, token: str, tenant_id: str | None = None):
     except Exception:
         user = None
     if not user:
+        await ws.accept()
         await ws.close(code=4401)
         return
     room = user.get("tenant_id")
     if user.get("platform_role") == "superadmin" and tenant_id:
         room = tenant_id
     if not room:
+        await ws.accept()
         await ws.close(code=4403)
         return
     await hub.connect(room, ws)

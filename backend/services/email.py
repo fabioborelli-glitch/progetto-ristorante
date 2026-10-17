@@ -107,6 +107,8 @@ async def send_email(*, to: str, subject: str, html: str, reply_to: str | None =
         if code in ("insufficient_credits", "integration_disabled", "daily_limit_reached"):
             logger.warning(f"Email paused: {code} ({e.response.status_code})")
             raise HTTPException(status_code=503, detail="Invio email temporaneamente non disponibile")
+        if e.response.status_code == 429 or code == "rate_limited":
+            raise HTTPException(status_code=503, detail="Troppe email in breve tempo, riprova fra qualche minuto")
         logger.error(f"Email send failed: {e.response.status_code} {e.response.text}")
         raise HTTPException(status_code=502, detail="Invio email fallito")
     except HTTPException:
