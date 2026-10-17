@@ -1,0 +1,11 @@
+{
+  "short_name": "RistoOS",
+  "name": "RistoOS — Gestionale Ristoranti",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#111827",
+  "background_color": "#FAFAFA",
+  "lang": "it",
+  "icons": []
+}

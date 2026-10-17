@@ -1,0 +1,151 @@
+import { useEffect, useState, useCallback, useRef } from "react";
+import { Link } from "react-router-dom";
+import { toast } from "sonner";
+import { ChefHat, Volume2, VolumeX, ArrowLeft } from "lucide-react";
+import { api, errMsg, ORDER_STATUS } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+
+const NEXT = { nuovo: ["in_preparazione", "Inizia"], in_preparazione: ["pronto", "Pronto"], pronto: ["servito", "Servito"] };
+
+function elapsed(iso) {
+  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  return m < 1 ? "adesso" : `${m} min`;
+}
+
+export default function Kds() {
+  const { tenant, user } = useAuth();
+  const [orders, setOrders] = useState([]);
+  const [filter, setFilter] = useState("all");
+  const [sound, setSound] = useState(true);
+  const [, tick] = useState(0);
+  const known = useRef(new Set());
+  const first = useRef(true);
+
+  const load = useCallback(async () => {
+    try {
+      const { data } = await api.get("/t/orders");
+      if (!first.current && sound) {
+        const fresh = data.some((o) => !known.current.has(o.id));
+        if (fresh) beep();
+      }
+      known.current = new Set(data.map((o) => o.id));
+      first.current = false;
+      setOrders(data);
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  }, [sound]);
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 4000);
+    const tk = setInterval(() => tick((x) => x + 1), 30000);
+    return () => { clearInterval(t); clearInterval(tk); };
+  }, [load]);
+
+  const bump = async (o) => {
+    const [status] = NEXT[o.status];
+    try {
+      await api.patch(`/t/orders/${o.id}/status`, { status });
+      load();
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  };
+
+  const cancel = async (o) => {
+    if (!window.confirm("Annullare questo ordine?")) return;
+    await api.patch(`/t/orders/${o.id}/status`, { status: "annullato" }).catch((e) => toast.error(errMsg(e)));
+    load();
+  };
+
+  const visible = filter === "all" ? orders : orders.filter((o) => o.status === filter);
+
+  return (
+    <div className="dark min-h-screen bg-[#0A0A0A] text-[#F8FAFC]" data-testid="kds-page">
+      <header className="sticky top-0 z-10 bg-[#0A0A0A]/90 backdrop-blur border-b border-[#334155] px-5 py-4 flex flex-wrap items-center gap-4">
+        <div className="flex items-center gap-3">
+          <ChefHat className="text-[#FF3B30]" />
+          <div>
+            <div className="font-display text-xl font-extrabold leading-none">Cucina</div>
+            <div className="text-xs text-gray-400">{tenant?.name || user?.email}</div>
+          </div>
+        </div>
+        <div className="flex gap-2 ml-4">
+          {[["all", "Tutti"], ["nuovo", "Nuovi"], ["in_preparazione", "In preparazione"], ["pronto", "Pronti"]].map(([k, l]) => (
+            <button key={k} onClick={() => setFilter(k)} data-testid={`kds-filter-${k}`}
+              className={`h-11 px-4 rounded-full text-sm font-semibold transition-colors duration-200 ${filter === k ? "bg-[#F8FAFC] text-[#0A0A0A]" : "bg-[#171717] text-gray-300 hover:bg-[#262626]"}`}>
+              {l} {k !== "all" && <span className="ml-1 opacity-60">{orders.filter((o) => o.status === k).length}</span>}
+            </button>
+          ))}
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <button onClick={() => setSound(!sound)} className="h-11 w-11 grid place-items-center rounded-full bg-[#171717] hover:bg-[#262626]" data-testid="kds-sound-toggle">{sound ? <Volume2 size={18} /> : <VolumeX size={18} />}</button>
+          {tenant && <Link to="/dashboard" className="h-11 px-4 inline-flex items-center gap-2 rounded-full bg-[#171717] hover:bg-[#262626] text-sm" data-testid="kds-back-link"><ArrowLeft size={16} />Gestionale</Link>}
+        </div>
+      </header>
+
+      <main className="p-5">
+        {visible.length === 0 ? (
+          <div className="h-[60vh] grid place-items-center text-gray-500 text-lg" data-testid="kds-empty">Nessun ordine attivo. Attendo…</div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4" data-testid="kds-grid">
+            {visible.map((o, i) => {
+              const st = ORDER_STATUS[o.status];
+              const [, label] = NEXT[o.status] || [];
+              return (
+                <article key={o.id} style={{ animationDelay: `${i * 40}ms` }} className={`fade-up bg-[#171717] rounded-xl border-t-4 ${st.color} ${o.status === "nuovo" ? "pulse-new" : ""} flex flex-col`} data-testid={`kds-ticket-${o.id}`}>
+                  <div className="px-5 pt-4 pb-3 flex items-start justify-between border-b border-[#262626]">
+                    <div>
+                      <div className="font-display text-3xl font-extrabold leading-none kds-ticket-number">Tav. {o.table_name}</div>
+                      <div className="text-xs text-gray-400 mt-1.5">{o.customer_name || "Cliente"} · {new Date(o.created_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}</div>
+                    </div>
+                    <div className="text-right">
+                      <span className={`inline-block text-[11px] font-bold uppercase tracking-wide text-white px-2 py-1 rounded ${st.badge}`}>{st.label}</span>
+                      <div className="text-sm text-gray-300 mt-1.5 tabular-nums" data-testid={`kds-elapsed-${o.id}`}>{elapsed(o.created_at)}</div>
+                    </div>
+                  </div>
+                  <ul className="px-5 py-4 space-y-2.5 flex-1">
+                    {o.items.map((it, j) => (
+                      <li key={j} className="flex gap-3">
+                        <span className="font-display text-2xl font-extrabold w-9 tabular-nums text-[#FF3B30]">{it.qty}</span>
+                        <div className="flex-1">
+                          <div className="text-lg font-semibold leading-tight">{it.name}</div>
+                          {it.variant && <div className="text-sm text-amber-300">{it.variant}</div>}
+                          {it.notes && <div className="text-sm text-gray-400 italic">“{it.notes}”</div>}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                  {o.notes && <div className="mx-5 mb-3 text-sm bg-amber-500/10 text-amber-200 border border-amber-500/30 rounded-lg px-3 py-2">Nota: {o.notes}</div>}
+                  <div className="p-3 pt-0 flex gap-2">
+                    <button onClick={() => bump(o)} data-testid={`kds-bump-${o.id}`}
+                      className={`flex-1 min-h-[64px] rounded-lg font-display text-xl font-extrabold text-white active:scale-95 transition-transform ${o.status === "nuovo" ? "bg-amber-500 hover:bg-amber-400" : o.status === "in_preparazione" ? "bg-emerald-600 hover:bg-emerald-500" : "bg-gray-600 hover:bg-gray-500"}`}>
+                      {label}
+                    </button>
+                    <button onClick={() => cancel(o)} className="min-h-[64px] px-4 rounded-lg bg-[#262626] text-gray-400 hover:text-red-400 text-sm" data-testid={`kds-cancel-${o.id}`}>Annulla</button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+function beep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g);
+    g.connect(ctx.destination);
+    o.frequency.value = 880;
+    g.gain.setValueAtTime(0.2, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+    o.start();
+    o.stop(ctx.currentTime + 0.4);
+  } catch {}
+}

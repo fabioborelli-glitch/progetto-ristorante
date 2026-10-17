@@ -1,0 +1,125 @@
+{
+  "theme": "hybrid_multi_mode",
+  "typography": {
+    "headings": "Cabinet Grotesk",
+    "body": "IBM Plex Sans",
+    "rules": "Do not use Inter. Use tracking-tight for headings > 32px. IBM Plex Sans provides excellent legibility for numbers and dense data in POS environments. Line-height should be leading-none for headers and leading-relaxed for body."
+  },
+  "colors": {
+    "dashboard_pos": {
+      "archetype": "Swiss & High-Contrast (Authority, Clarity, Truth)",
+      "background": "#FAFAFA",
+      "surface": "#FFFFFF",
+      "primary": "#E03131",
+      "text": "#111827",
+      "border": "#E5E7EB",
+      "status_free": "#10B981",
+      "status_occupied": "#F59E0B",
+      "status_waiting": "#3B82F6"
+    },
+    "kds_kitchen": {
+      "archetype": "The Performance Pro (Elite Athleticism & Precision)",
+      "background": "#0A0A0A",
+      "surface": "#171717",
+      "primary": "#FF3B30",
+      "text": "#F8FAFC",
+      "border": "#334155",
+      "ticket_new": "#3B82F6",
+      "ticket_cooking": "#F59E0B",
+      "ticket_ready": "#10B981"
+    },
+    "public_mobile": {
+      "archetype": "Organic & Earthy",
+      "background": "#FDFBF7",
+      "surface": "#FFFFFF",
+      "primary": "#D97706",
+      "text": "#292524"
+    }
+  },
+  "visual_enhancers": {
+    "shadows": "Ambient diffuse shadows for floating elements, otherwise flat.",
+    "borders": "Grid borders pattern for data tables. 1px solid borders for menu items.",
+    "interactions": "Active states must have high contrast (e.g., bg-gray-900 text-white). Touch-feedback scale (active:scale-95) for POS buttons."
+  },
+  "components": {
+    "buttons": "Pill-shaped or rounded-lg. Huge touch targets on POS (min-h-[64px]). Use primary color for main action, subtle gray for secondary.",
+    "cards": "Flat background, 1px subtle border, no shadow for dashboard. KDS tickets should have top colored border to indicate status.",
+    "modals": "Slide-out sheets (Shadcn Sheet) preferred over center dialogs for POS to keep context.",
+    "inputs": "Shadcn inputs with large padding (p-4) for tablet tap targets."
+  },
+  "grids": {
+    "pos_menu_grid": "Dense bento grid, grid-cols-3 or grid-cols-4 for menu items to allow fast scanning.",
+    "kds_grid": "Masonry or flexible grid (grid-cols-2 lg:grid-cols-4) for ticket cards. No gaps at the bottom.",
+    "floor_plan": "CSS Grid or absolute positioning canvas for drag-and-drop tables."
+  },
+  "layouts": {
+    "pos_tablet": "Top row for active tables/alerts. Middle area split: left 2/3 for menu grid, right 1/3 for current order ticket. Bottom rail for main navigation.",
+    "kds_tablet": "Full width, no sidebars. Top bar for filter (All, Grill, Fryer). Remaining space for active tickets.",
+    "mobile_public": "Mobile-first. Sticky category horizontal scroll navigation. Bottom sheet pattern for cart. Big sticky CTA at the bottom for 'Ordina ora'.",
+    "spacing": "Use p-4 to p-6 for POS grids to maximize touch targets. p-8 for dashboard summaries."
+  },
+  "motion": {
+    "transitions": "Use specific transition properties (e.g., transition-colors duration-200, transition-transform). Avoid transition-all.",
+    "hover": "Slight lift (-translate-y-1) for menu cards, background darkening for buttons.",
+    "entrance": "Staggered fade-up for KDS tickets so new orders pop in cleanly."
+  },
+  "accessibility": {
+    "contrast": "Ensure APCA minimum contrast. POS environment needs extremely high contrast due to glare.",
+    "touch_targets": "Minimum 48x48px touch targets for mobile, 64x64px for POS tablets.",
+    "focus": "High contrast focus rings (focus:ring-2 focus:ring-primary focus:outline-none)."
+  },
+  "media": {
+    "icons": "Use @phosphor-icons/react for POS/Dashboard for clear, readable iconography. lucide-react as fallback.",
+    "images": "Hero images must have max opacity bg-black/40 overlay. Images must not exceed 80vh on mobile."
+  },
+  "3d_libraries": {
+    "usage": "Not required for this MVP as it is an operational dashboard. Use framer-motion for drag-and-drop table layouts if needed, but 3D is overkill."
+  },
+  "image_urls": {
+    "hero_public": {
+      "url": "https://images.pexels.com/photos/2387675/pexels-photo-2387675.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Spacious restaurant with stylish interior design, for public booking landing page hero.",
+      "category": "public_landing"
+    },
+    "food_sample_1": {
+      "url": "https://images.unsplash.com/photo-1534649643822-e7431de08af6?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTJ8MHwxfHNlYXJjaHwzfHxpdGFsaWFuJTIwcmVzdGF1cmFudCUyMGZvb2R8ZW58MHx8fHwxNzkyMjc2NDMyfDA&ixlib=rb-4.1.0&q=85",
+      "description": "Pizza on white tray for menu item sample.",
+      "category": "menu_items"
+    },
+    "food_sample_2": {
+      "url": "https://images.pexels.com/photos/8864543/pexels-photo-8864543.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Steak with risotto for menu item sample.",
+      "category": "menu_items"
+    },
+    "kds_background": {
+      "url": "https://images.unsplash.com/photo-1670819916552-67698b1c86ae?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzd8MHwxfHNlYXJjaHwzfHxjaGVmJTIwa2l0Y2hlbiUyMGRhcmt8ZW58MHx8fHwxNzkyMjc2NDMzfDA&ixlib=rb-4.1.0&q=85",
+      "description": "Chef cooking in dark kitchen. Use heavily darkened as optional login bg for KDS.",
+      "category": "auth_background"
+    }
+  },
+  "component_path": {
+    "ui": "/app/frontend/src/components/ui/",
+    "pages": "/app/frontend/src/pages/"
+  },
+  "instructions_to_main_agent": [
+    "Ensure the UI is entirely in Italian (e.g., 'Tavoli', 'Ordini', 'Prenotazioni', 'Impostazioni', 'Gestione Menu').",
+    "Implement light mode for POS/Dashboard, but strictly Dark Mode for the KDS (Kitchen Display System).",
+    "Floor plan editor needs to be a drag-and-drop grid interface. Tables should be visually distinct based on status (Libero = Green, Occupato = Orange/Red, In attesa = Blue).",
+    "For the KDS, use a Masonry or flexible grid layout for ticket cards. They must have clear, large text and a 'Completa' button with massive touch targets.",
+    "Avoid deep navigation. Core POS actions must be max 2 taps away. Use Shadcn Sheet/Drawer for side-panel order editing rather than full page navigations.",
+    "Do not use generic SaaS gradients; keep it flat, high-contrast, and operational (Lightspeed/Toast style).",
+    "For public mobile QR ordering, ensure a sticky 'Carrello' (Cart) button at the bottom of the screen.",
+    "Install and use 'sonner' for toast notifications, and ensure data-testid is present on all interactive elements.",
+    "Create a Super-admin view to manage and list tenants (restaurants)."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "Do not center-align the app container (no .App { text-align: center; }).",
+    "Use 2-3x more spacing than feels comfortable. Large touch targets are critical for POS.",
+    "Never use AI assistant Emoji characters (🤖🧠💡) for icons.",
+    "Add transition for specific interactive elements (e.g. transition-colors duration-200), do NOT use 'transition-all'.",
+    "Use sonner for toasts notifications.",
+    "All interactive and key informational elements MUST include a data-testid attribute to facilitate robust automated testing.",
+    "Create depth through layered design elements with z-index hierarchy, but keep operational UI flat and fast.",
+    "Prioritize using pre-existing components from src/components/ui when applicable."
+  ]
+}
