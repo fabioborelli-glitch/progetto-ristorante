@@ -2,11 +2,13 @@ import random
 import string
 from datetime import datetime, timezone
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from pydantic import BaseModel, EmailStr
 from core import (db, new_id, now_iso, ser, tq, get_scoped_or_404, require_tenant, Principal,
                   hash_password, TENANT_ROLES, ROLE_RANK)
 from services.ws import hub
+from services.notify import notify_reservation
+from services.stations import resolve_station, derive_order_status, DEFAULT_STATIONS
 
 router = APIRouter(prefix="/t", tags=["tenant"])
 
@@ -31,6 +33,14 @@ class TenantSettings(BaseModel):
     slots: Optional[List[str]] = None
     capacity_per_slot: Optional[int] = None
     logo_url: Optional[str] = None
+    stations: Optional[List[dict]] = None
+    notify_reply_to: Optional[str] = None
+
+
+class StationIn(BaseModel):
+    id: Optional[str] = None
+    name: str
+    color: Optional[str] = "#F59E0B"
 
 
 @router.get("/settings")
@@ -41,6 +51,17 @@ async def get_settings(p: Principal = Depends(require_tenant("staff"))):
 @router.patch("/settings")
 async def update_settings(body: TenantSettings, p: Principal = Depends(require_tenant("manager"))):
     upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    if "stations" in upd:
+        stations = []
+        for i, s in enumerate(upd["stations"]):
+            name = (s.get("name") or "").strip()
+            if not name:
+                continue
+            sid = s.get("id") or f"st{i}{new_id()[:4]}"
+            stations.append({"id": sid, "name": name, "color": s.get("color") or "#F59E0B"})
+        if not stations:
+            raise HTTPException(status_code=400, detail="Serve almeno un reparto")
+        upd["stations"] = stations
     res = await db.tenants.find_one_and_update({"_id": p.tenant_id}, {"$set": upd}, return_document=True)
     return ser(res)
 
@@ -233,17 +254,19 @@ async def list_reservations(date: Optional[str] = None, p: Principal = Depends(r
 
 
 @router.post("/reservations", status_code=201)
-async def create_reservation(body: ReservationIn, p: Principal = Depends(require_tenant())):
+async def create_reservation(body: ReservationIn, background: BackgroundTasks, p: Principal = Depends(require_tenant())):
     if body.status not in RES_STATUSES:
         raise HTTPException(status_code=400, detail="Stato non valido")
-    doc = {"_id": new_id(), "tenant_id": p.tenant_id, **body.model_dump(), "source": "manuale",
+    doc = {"_id": new_id(), "tenant_id": p.tenant_id, **body.model_dump(), "source": "manuale", "notify": {},
            "created_at": now_iso()}
     await db.reservations.insert_one(doc)
+    if body.status == "confermata" and body.email:
+        background.add_task(notify_reservation, doc["_id"], "conferma")
     return ser(doc)
 
 
 @router.patch("/reservations/{res_id}")
-async def update_reservation(res_id: str, body: ReservationUpdate, p: Principal = Depends(require_tenant())):
+async def update_reservation(res_id: str, body: ReservationUpdate, background: BackgroundTasks, p: Principal = Depends(require_tenant())):
     current = await get_scoped_or_404(p, "reservations", res_id)
     upd = {k: v for k, v in body.model_dump().items() if v is not None}
     if "status" in upd and upd["status"] not in RES_STATUSES:
@@ -254,7 +277,26 @@ async def update_reservation(res_id: str, body: ReservationUpdate, p: Principal 
             await db.tables.update_one(tq(p, {"_id": tid}), {"$set": {"status": "occupato"}})
             await hub.emit(p.tenant_id, "tables_changed")
     res = await db.reservations.find_one_and_update(tq(p, {"_id": res_id}), {"$set": upd}, return_document=True)
+    if upd.get("status") == "confermata" and current.get("status") != "confermata" and res.get("email"):
+        background.add_task(notify_reservation, res_id, "conferma")
     return ser(res)
+
+
+class NotifyIn(BaseModel):
+    kind: str
+
+
+@router.post("/reservations/{res_id}/notify")
+async def resend_notification(res_id: str, body: NotifyIn, p: Principal = Depends(require_tenant())):
+    res = await get_scoped_or_404(p, "reservations", res_id)
+    if body.kind not in ("conferma", "promemoria", "ricevuta"):
+        raise HTTPException(status_code=400, detail="Tipo non valido")
+    if not res.get("email"):
+        raise HTTPException(status_code=400, detail="La prenotazione non ha un indirizzo email")
+    ok = await notify_reservation(res_id, body.kind)
+    if not ok:
+        raise HTTPException(status_code=502, detail="Invio email non riuscito, riprova tra poco")
+    return ser(await db.reservations.find_one({"_id": res_id}))
 
 
 @router.delete("/reservations/{res_id}")
@@ -268,6 +310,7 @@ async def delete_reservation(res_id: str, p: Principal = Depends(require_tenant(
 class CategoryIn(BaseModel):
     name: str
     name_en: Optional[str] = ""
+    station_id: Optional[str] = None
 
 
 class VariantIn(BaseModel):
@@ -285,6 +328,7 @@ class MenuItemIn(BaseModel):
     variants: List[VariantIn] = []
     available: bool = True
     image_url: Optional[str] = ""
+    station_id: Optional[str] = None
 
 
 class MenuItemUpdate(BaseModel):
@@ -297,6 +341,8 @@ class MenuItemUpdate(BaseModel):
     variants: Optional[List[VariantIn]] = None
     available: Optional[bool] = None
     image_url: Optional[str] = None
+    station_id: Optional[str] = None
+    clear_station: bool = False
 
 
 @router.get("/menu/allergens")
@@ -349,7 +395,9 @@ async def create_item(body: MenuItemIn, p: Principal = Depends(require_tenant("m
 @router.patch("/menu/items/{item_id}")
 async def update_item(item_id: str, body: MenuItemUpdate, p: Principal = Depends(require_tenant())):
     await get_scoped_or_404(p, "menu_items", item_id)
-    upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    upd = {k: v for k, v in body.model_dump(exclude={"clear_station"}).items() if v is not None}
+    if body.clear_station:
+        upd["station_id"] = None
     if "category_id" in upd:
         await get_scoped_or_404(p, "categories", upd["category_id"])
     res = await db.menu_items.find_one_and_update(tq(p, {"_id": item_id}), {"$set": upd}, return_document=True)
@@ -366,6 +414,7 @@ async def delete_item(item_id: str, p: Principal = Depends(require_tenant("manag
 # ---------- Orders / KDS ----------
 class OrderStatusIn(BaseModel):
     status: str
+    station_id: Optional[str] = None
 
 
 @router.get("/orders")
@@ -380,10 +429,20 @@ async def set_order_status(order_id: str, body: OrderStatusIn, p: Principal = De
     if body.status not in ORDER_STATUSES:
         raise HTTPException(status_code=400, detail="Stato non valido")
     order = await get_scoped_or_404(p, "orders", order_id)
+    stations = dict(order.get("stations") or {})
+    if body.station_id and body.status in ("nuovo", "in_preparazione", "pronto") and stations:
+        if body.station_id not in stations:
+            raise HTTPException(status_code=400, detail="Reparto non presente nell'ordine")
+        stations[body.station_id] = body.status
+        new_status = derive_order_status(stations, order["status"])
+    else:
+        new_status = body.status
+        if stations and body.status in ("nuovo", "in_preparazione", "pronto"):
+            stations = {k: body.status for k in stations}
     res = await db.orders.find_one_and_update(tq(p, {"_id": order_id}),
-                                              {"$set": {"status": body.status, "updated_at": now_iso()}},
+                                              {"$set": {"status": new_status, "stations": stations, "updated_at": now_iso()}},
                                               return_document=True)
-    if body.status in ("servito", "annullato"):
+    if new_status in ("servito", "annullato"):
         remaining = await db.orders.count_documents(tq(p, {"table_id": order["table_id"],
                                                            "status": {"$in": ["nuovo", "in_preparazione", "pronto"]}}))
         if remaining == 0:

@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { Plus, Scissors, Percent, Banknote, CheckCircle2, FileText, Trash2, X } from "lucide-react";
+import { Plus, Scissors, Percent, Banknote, CheckCircle2, FileText, Trash2, X, Printer, Bluetooth } from "lucide-react";
 import { api, errMsg, fmtEur, PAY_METHODS } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import { printReceiptSystem, printReceiptBluetooth, isConnected, autoPrintEnabled } from "@/lib/printer";
 import { Button } from "@/components/ui/button";
 import { AddItemsSheet } from "@/components/pos/AddItemsSheet";
 import { SplitSheet } from "@/components/pos/SplitSheet";
@@ -20,20 +22,33 @@ export async function openReceipt(billId) {
 }
 
 export function BillPanel({ bill, onChanged, canEdit }) {
+  const { tenant } = useAuth();
   const [sheet, setSheet] = useState(null);
   const closed = bill.status === "chiuso";
+
+  const printSystem = () => { try { printReceiptSystem(bill, tenant); } catch (e) { toast.error(e.message); } };
+  const printBt = async () => {
+    try { await printReceiptBluetooth(bill, tenant); toast.success("Inviato alla stampante"); } catch (e) { toast.error(e.message || "Stampa fallita"); }
+  };
 
   const call = async (fn, ok) => {
     try {
       const { data } = await fn();
       onChanged(data);
       if (ok) toast.success(ok);
+      return data;
     } catch (e) {
       toast.error(errMsg(e));
     }
   };
 
-  const close = () => call(() => api.post(`/t/bills/${bill.id}/close`), `Conto chiuso · ${bill.table_name}`);
+  const close = async () => {
+    const data = await call(() => api.post(`/t/bills/${bill.id}/close`), `Conto chiuso · ${bill.table_name}`);
+    if (data && autoPrintEnabled()) {
+      if (isConnected()) printReceiptBluetooth(data, tenant).catch((e) => toast.error(e.message));
+      else printReceiptSystem(data, tenant);
+    }
+  };
   const removeLine = (key) => call(() => api.delete(`/t/bills/${bill.id}/lines/${encodeURIComponent(key)}`));
   const removePayment = (pid) => call(() => api.delete(`/t/bills/${bill.id}/payments/${pid}`));
   const cancel = async () => {
@@ -88,6 +103,8 @@ export function BillPanel({ bill, onChanged, canEdit }) {
       <div className="p-3 border-t border-gray-200 grid grid-cols-2 gap-2">
         {closed ? (
           <>
+            <Button className="h-14 bg-gray-900 hover:bg-gray-800" onClick={printSystem} data-testid="bill-print-btn"><Printer size={16} className="mr-2" />Stampa</Button>
+            <Button variant="outline" className="h-14" onClick={printBt} disabled={!isConnected()} data-testid="bill-print-bt-btn"><Bluetooth size={16} className="mr-2" />Bluetooth</Button>
             <Button variant="outline" className="h-14 col-span-2" onClick={() => openReceipt(bill.id)} data-testid="bill-receipt-btn"><FileText size={16} className="mr-2" />Scontrino PDF</Button>
           </>
         ) : (
@@ -99,8 +116,11 @@ export function BillPanel({ bill, onChanged, canEdit }) {
             <Button className="h-14 col-span-2 bg-emerald-600 hover:bg-emerald-700 text-base font-bold active:scale-[0.98] transition-transform" disabled={bill.remaining > 0.009 || bill.lines.length === 0} onClick={close} data-testid="bill-close-btn">
               <CheckCircle2 size={18} className="mr-2" />Chiudi conto
             </Button>
-            <div className="col-span-2 flex justify-between">
-              <button onClick={() => openReceipt(bill.id)} className="text-xs text-gray-500 hover:text-gray-900 inline-flex items-center gap-1" data-testid="bill-preconto-btn"><FileText size={12} />Preconto PDF</button>
+            <div className="col-span-2 flex justify-between items-center">
+              <div className="flex gap-3">
+                <button onClick={() => openReceipt(bill.id)} className="text-xs text-gray-500 hover:text-gray-900 inline-flex items-center gap-1" data-testid="bill-preconto-btn"><FileText size={12} />Preconto PDF</button>
+                <button onClick={printSystem} className="text-xs text-gray-500 hover:text-gray-900 inline-flex items-center gap-1" data-testid="bill-preconto-print-btn"><Printer size={12} />Stampa preconto</button>
+              </div>
               {canEdit && <button onClick={cancel} className="text-xs text-red-600 hover:underline" data-testid="bill-cancel-btn">Annulla conto</button>}
             </div>
           </>

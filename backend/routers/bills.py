@@ -7,6 +7,7 @@ from reportlab.lib.pagesizes import mm
 from reportlab.pdfgen import canvas
 from core import db, new_id, now_iso, ser, tq, get_scoped_or_404, require_tenant, Principal
 from services.ws import hub
+from services.stations import resolve_station
 
 router = APIRouter(prefix="/t/bills", tags=["bills"])
 
@@ -151,10 +152,14 @@ async def add_item(bill_id: str, body: AddItem, p: Principal = Depends(require_t
     if body.qty < 1:
         raise HTTPException(status_code=400, detail="Quantità non valida")
     qty = body.qty
+    tenant = await db.tenants.find_one({"_id": p.tenant_id})
+    cat = await db.categories.find_one({"_id": item.get("category_id")})
+    sid = resolve_station(tenant, item, cat)
     order = {"_id": new_id(), "tenant_id": p.tenant_id, "table_id": bill["table_id"], "table_name": bill["table_name"],
              "customer_name": "Cassa", "notes": "", "bill_id": bill_id,
              "items": [{"item_id": item["_id"], "name": item["name"], "qty": qty, "variant": body.variant,
-                        "notes": body.notes or "", "price": round(price, 2)}],
+                        "notes": body.notes or "", "price": round(price, 2), "station_id": sid}],
+             "stations": {sid: "nuovo" if body.send_to_kitchen else "pronto"},
              "total": round(price * qty, 2), "status": "nuovo" if body.send_to_kitchen else "servito",
              "source": "cassa", "created_at": now_iso(), "updated_at": now_iso()}
     await db.orders.insert_one(order)

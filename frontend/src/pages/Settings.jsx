@@ -4,6 +4,8 @@ import { Plus, Trash2, Mail, Copy, X } from "lucide-react";
 import { api, errMsg } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { ImageUpload } from "@/components/ImageUpload";
+import { PrinterSettings } from "@/components/PrinterSettings";
+import { StationsEditor } from "@/components/StationsEditor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -107,6 +109,9 @@ export default function Settings() {
         <div className="text-xs text-gray-500">Slug pubblico: <code className="bg-gray-100 px-1.5 py-0.5 rounded">/r/{s.slug}</code></div>
         {canEdit && <Button type="submit" className="h-12 px-6 bg-[#E03131] hover:bg-[#c42727]" data-testid="settings-save-btn">Salva impostazioni</Button>}
       </form>
+
+      {canEdit && <StationsEditor stations={s.stations} onSaved={(t) => setS({ ...s, stations: t.stations })} />}
+      <PrinterSettings />
 
       {canEdit && (
         <section className="bg-white border border-gray-200 rounded-xl p-6 md:p-8 space-y-5" data-testid="team-section">

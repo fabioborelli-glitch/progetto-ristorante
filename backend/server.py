@@ -10,10 +10,11 @@ from fastapi import FastAPI, APIRouter, WebSocket, WebSocketDisconnect
 from starlette.middleware.cors import CORSMiddleware
 
 from core import db, client, new_id, now_iso, hash_password, verify_password, JWT_ALGORITHM
-from routers import auth, admin, tenant, public, invites, files, bills
+from routers import auth, admin, tenant, public, invites, files, bills, cron
 from routers.admin import tenant_doc
 from services.ws import hub
 from services.storage import init_storage
+from services.stations import DEFAULT_STATIONS
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("ristoos")
@@ -33,6 +34,7 @@ api.include_router(tenant.router)
 api.include_router(bills.router)
 api.include_router(invites.router)
 api.include_router(files.router)
+api.include_router(cron.router)
 api.include_router(public.router)
 app.include_router(api)
 
@@ -155,6 +157,10 @@ async def startup():
     await db.invites.create_index("token", unique=True)
     await db.bills.create_index([("tenant_id", 1), ("status", 1)])
     await db.files.create_index("tenant_id")
+    await db.tenants.update_many({"stations": {"$exists": False}}, {"$set": {"stations": DEFAULT_STATIONS}})
+    await db.categories.update_many({"name": {"$in": ["Pizze", "Pizza", "Pizzeria"]}, "station_id": {"$exists": False}}, {"$set": {"station_id": "pizzeria"}})
+    await db.categories.update_many({"name": {"$in": ["Bevande", "Bar", "Vini", "Caffetteria"]}, "station_id": {"$exists": False}}, {"$set": {"station_id": "bar"}})
+    await db.menu_items.update_many({"name": {"$regex": "^Pizza", "$options": "i"}, "station_id": {"$exists": False}}, {"$set": {"station_id": "pizzeria"}})
     try:
         init_storage()
         logger.info("Storage initialized")

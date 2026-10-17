@@ -1,8 +1,10 @@
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from core import db, new_id, now_iso, ser
 from services.ws import hub
+from services.notify import notify_reservation
+from services.stations import build_order_lines
 
 router = APIRouter(prefix="/public", tags=["public"])
 
@@ -49,7 +51,7 @@ class PublicReservation(BaseModel):
 
 
 @router.post("/{slug}/reservations", status_code=201)
-async def book(slug: str, body: PublicReservation):
+async def book(slug: str, body: PublicReservation, background: BackgroundTasks):
     t = await get_tenant(slug)
     if body.time not in t.get("slots", []):
         raise HTTPException(status_code=400, detail="Orario non disponibile")
@@ -60,9 +62,11 @@ async def book(slug: str, body: PublicReservation):
     if sum(r["guests"] for r in res) + body.guests > t.get("capacity_per_slot", 40):
         raise HTTPException(status_code=400, detail="Posti esauriti per questo orario")
     doc = {"_id": new_id(), "tenant_id": t["_id"], **body.model_dump(), "table_id": None,
-           "status": "in_attesa", "source": "online", "created_at": now_iso()}
+           "status": "in_attesa", "source": "online", "notify": {}, "created_at": now_iso()}
     await db.reservations.insert_one(doc)
     await hub.emit(t["_id"], "reservations_changed")
+    if body.email:
+        background.add_task(notify_reservation, doc["_id"], "ricevuta")
     return ser(doc)
 
 
@@ -105,7 +109,8 @@ async def place_order(slug: str, body: PublicOrder):
         raise HTTPException(status_code=400, detail="Carrello vuoto")
     ids = [l.item_id for l in body.lines]
     items = {i["_id"]: i for i in await db.menu_items.find({"tenant_id": t["_id"], "_id": {"$in": ids}, "available": True}).to_list(200)}
-    lines, total = [], 0.0
+    cats = {c["_id"]: c for c in await db.categories.find({"tenant_id": t["_id"]}).to_list(100)}
+    raw, total = [], 0.0
     for l in body.lines:
         it = items.get(l.item_id)
         if not it or l.qty < 1:
@@ -116,11 +121,11 @@ async def place_order(slug: str, body: PublicOrder):
             if not v:
                 raise HTTPException(status_code=400, detail="Variante non valida")
             price += v["price_delta"]
-        lines.append({"item_id": it["_id"], "name": it["name"], "qty": l.qty, "variant": l.variant,
-                      "notes": l.notes or "", "price": round(price, 2)})
+        raw.append({"item": it, "qty": l.qty, "variant": l.variant, "notes": l.notes, "price": price})
         total += price * l.qty
+    lines, stations = build_order_lines(t, items, cats, raw)
     doc = {"_id": new_id(), "tenant_id": t["_id"], "table_id": table["_id"], "table_name": table["name"],
-           "customer_name": body.customer_name or "", "notes": body.notes or "", "items": lines,
+           "customer_name": body.customer_name or "", "notes": body.notes or "", "items": lines, "stations": stations,
            "total": round(total, 2), "status": "nuovo", "source": "qr", "bill_id": None,
            "created_at": now_iso(), "updated_at": now_iso()}
     await db.orders.insert_one(doc)

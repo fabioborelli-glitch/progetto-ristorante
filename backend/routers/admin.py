@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, EmailStr
 from core import db, new_id, now_iso, ser, hash_password, require_superadmin, Principal
 from routers.invites import create_and_send_invite
+from services.stations import DEFAULT_STATIONS
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -33,6 +34,7 @@ def slugify(s: str) -> str:
 def tenant_doc(name: str, slug: str, city: str = "") -> dict:
     return {"_id": new_id(), "name": name, "slug": slug, "city": city, "address": "", "phone": "",
             "description": "", "logo_url": "", "active": True, "slots": DEFAULT_SLOTS, "capacity_per_slot": 40,
+            "stations": [dict(s) for s in DEFAULT_STATIONS],
             "currency": "EUR", "created_at": now_iso()}
 
 

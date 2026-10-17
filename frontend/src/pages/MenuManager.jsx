@@ -15,7 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 const EMPTY_ITEM = { category_id: "", name: "", name_en: "", description: "", price: "", allergens: [], variants: [], available: true, image_url: "" };
 
 export default function MenuManager() {
-  const { role } = useAuth();
+  const { role, tenant } = useAuth();
+  const stations = tenant?.stations || [];
   const canEdit = role === "owner" || role === "manager";
   const [cats, setCats] = useState([]);
   const [items, setItems] = useState([]);
@@ -24,7 +25,7 @@ export default function MenuManager() {
   const [catOpen, setCatOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_ITEM);
   const [editing, setEditing] = useState(null);
-  const [catForm, setCatForm] = useState({ id: null, name: "", name_en: "" });
+  const [catForm, setCatForm] = useState({ id: null, name: "", name_en: "", station_id: null });
 
   const load = useCallback(async () => {
     try {
@@ -43,7 +44,7 @@ export default function MenuManager() {
 
   const saveItem = async (e) => {
     e.preventDefault();
-    const payload = { ...form, price: parseFloat(form.price), variants: form.variants.filter((v) => v.name).map((v) => ({ name: v.name, price_delta: parseFloat(v.price_delta) || 0 })) };
+    const payload = { ...form, price: parseFloat(form.price), station_id: form.station_id || null, clear_station: !form.station_id, variants: form.variants.filter((v) => v.name).map((v) => ({ name: v.name, price_delta: parseFloat(v.price_delta) || 0 })) };
     try {
       if (editing) await api.patch(`/t/menu/items/${editing.id}`, payload);
       else await api.post("/t/menu/items", payload);
@@ -67,8 +68,8 @@ export default function MenuManager() {
   const saveCat = async (e) => {
     e.preventDefault();
     try {
-      if (catForm.id) await api.patch(`/t/menu/categories/${catForm.id}`, { name: catForm.name, name_en: catForm.name_en });
-      else await api.post("/t/menu/categories", { name: catForm.name, name_en: catForm.name_en });
+      if (catForm.id) await api.patch(`/t/menu/categories/${catForm.id}`, { name: catForm.name, name_en: catForm.name_en, station_id: catForm.station_id || null });
+      else await api.post("/t/menu/categories", { name: catForm.name, name_en: catForm.name_en, station_id: catForm.station_id || null });
       toast.success("Categoria salvata");
       setCatOpen(false);
       load();
@@ -94,7 +95,7 @@ export default function MenuManager() {
         </div>
         {canEdit && (
           <div className="flex gap-2">
-            <Button variant="outline" className="h-12" onClick={() => { setCatForm({ id: null, name: "", name_en: "" }); setCatOpen(true); }} data-testid="new-category-btn"><Plus size={16} className="mr-1" />Categoria</Button>
+            <Button variant="outline" className="h-12" onClick={() => { setCatForm({ id: null, name: "", name_en: "", station_id: null }); setCatOpen(true); }} data-testid="new-category-btn"><Plus size={16} className="mr-1" />Categoria</Button>
             <Button className="h-12 px-6 bg-[#E03131] hover:bg-[#c42727]" onClick={openNewItem} disabled={cats.length === 0} data-testid="new-item-btn"><Plus size={18} className="mr-2" />Nuovo piatto</Button>
           </div>
         )}
@@ -106,7 +107,7 @@ export default function MenuManager() {
           <div key={c.id} className="flex items-center">
             <CatTab active={activeCat === c.id} onClick={() => setActiveCat(c.id)} testid={`cat-tab-${c.id}`}>{c.name}</CatTab>
             {canEdit && activeCat === c.id && (
-              <button onClick={() => { setCatForm({ id: c.id, name: c.name, name_en: c.name_en || "" }); setCatOpen(true); }} className="ml-1 h-10 w-10 grid place-items-center rounded-full hover:bg-gray-100" data-testid={`edit-cat-${c.id}`}><Pencil size={14} /></button>
+              <button onClick={() => { setCatForm({ id: c.id, name: c.name, name_en: c.name_en || "", station_id: c.station_id || null }); setCatOpen(true); }} className="ml-1 h-10 w-10 grid place-items-center rounded-full hover:bg-gray-100" data-testid={`edit-cat-${c.id}`}><Pencil size={14} /></button>
             )}
           </div>
         ))}
@@ -163,6 +164,17 @@ export default function MenuManager() {
               <div className="space-y-1"><Label>Prezzo (€)</Label><Input className="h-11" type="number" step="0.5" min={0} value={form.price} onChange={f("price")} required data-testid="item-price-input" /></div>
             </div>
             <ImageUpload value={form.image_url} onChange={(u) => setForm({ ...form, image_url: u })} label="Foto del piatto" testid="item-image-upload" />
+            {stations.length > 0 && (
+              <div className="space-y-1"><Label>Reparto (comanda)</Label>
+                <Select value={form.station_id || "inherit"} onValueChange={(v) => setForm({ ...form, station_id: v === "inherit" ? null : v })}>
+                  <SelectTrigger className="h-11" data-testid="item-station-select"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="inherit">Come la categoria{(() => { const c = cats.find((x) => x.id === form.category_id); const s = stations.find((x) => x.id === c?.station_id) || stations[0]; return s ? ` (${s.name})` : ""; })()}</SelectItem>
+                    {stations.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Allergeni</Label>
               <div className="flex flex-wrap gap-1.5">
@@ -197,6 +209,14 @@ export default function MenuManager() {
           <form onSubmit={saveCat} className="space-y-4 mt-6" data-testid="category-form">
             <div className="space-y-1"><Label>Nome (IT)</Label><Input className="h-11" value={catForm.name} onChange={(e) => setCatForm({ ...catForm, name: e.target.value })} required data-testid="cat-name-input" /></div>
             <div className="space-y-1"><Label>Nome (EN)</Label><Input className="h-11" value={catForm.name_en} onChange={(e) => setCatForm({ ...catForm, name_en: e.target.value })} data-testid="cat-name-en-input" /></div>
+            {stations.length > 0 && (
+              <div className="space-y-1"><Label>Reparto predefinito</Label>
+                <Select value={catForm.station_id || stations[0].id} onValueChange={(v) => setCatForm({ ...catForm, station_id: v })}>
+                  <SelectTrigger className="h-11" data-testid="cat-station-select"><SelectValue /></SelectTrigger>
+                  <SelectContent>{stations.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            )}
             <Button type="submit" className="w-full h-12 bg-[#E03131] hover:bg-[#c42727]" data-testid="cat-submit-btn">Salva</Button>
             {catForm.id && <Button type="button" variant="outline" className="w-full h-11 text-red-600 border-red-200" onClick={deleteCat} data-testid="cat-delete-btn">Elimina categoria</Button>}
           </form>

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { Plus, ChevronLeft, ChevronRight, Phone, Users, Link as LinkIcon } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, Phone, Users, Link as LinkIcon, Mail, MailCheck, Bell } from "lucide-react";
 import { api, errMsg, todayStr, RES_STATUS } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useTenantSocket } from "@/hooks/useTenantSocket";
@@ -56,9 +56,25 @@ export default function Reservations() {
   const quickStatus = async (r, status) => {
     try {
       await api.patch(`/t/reservations/${r.id}`, { status });
+      if (status === "confermata" && r.email) toast.success(`Confermata · email inviata a ${r.email}`);
       load();
     } catch (err) {
       toast.error(errMsg(err));
+    }
+  };
+
+  const [sending, setSending] = useState(false);
+  const resend = async (kind) => {
+    setSending(true);
+    try {
+      const { data } = await api.post(`/t/reservations/${editing.id}/notify`, { kind });
+      setEditing(data);
+      toast.success(kind === "promemoria" ? "Promemoria inviato" : "Conferma inviata");
+      load();
+    } catch (err) {
+      toast.error(errMsg(err));
+    } finally {
+      setSending(false);
     }
   };
 
@@ -99,6 +115,12 @@ export default function Reservations() {
                   <div className="text-xs text-gray-500 flex items-center gap-3 mt-0.5">
                     <span className="inline-flex items-center gap-1"><Users size={12} />{r.guests}</span>
                     {r.phone && <span className="inline-flex items-center gap-1"><Phone size={12} />{r.phone}</span>}
+                    {r.email && (
+                      <span className={`inline-flex items-center gap-1 ${r.notify?.conferma || r.notify?.promemoria ? "text-emerald-700" : ""}`} data-testid={`reservation-mail-${r.id}`} title={r.notify?.promemoria ? "Promemoria inviato" : r.notify?.conferma ? "Conferma inviata" : r.notify?.ricevuta ? "Ricevuta inviata" : "Email non ancora inviata"}>
+                        {r.notify?.promemoria ? <Bell size={12} /> : r.notify?.conferma ? <MailCheck size={12} /> : <Mail size={12} />}
+                        {r.notify?.promemoria ? "promemoria" : r.notify?.conferma ? "confermata via email" : r.notify?.ricevuta ? "ricevuta inviata" : r.email}
+                      </span>
+                    )}
                     {r.table_id && <span>Tavolo {tables.find((t) => t.id === r.table_id)?.name || "?"}</span>}
                     {r.notes && <span className="truncate italic">“{r.notes}”</span>}
                   </div>
@@ -153,6 +175,22 @@ export default function Reservations() {
             </div>
             <div className="space-y-1"><Label>Note</Label><Textarea value={form.notes || ""} onChange={f("notes")} data-testid="res-notes-input" /></div>
             <Button type="submit" className="w-full h-12 bg-[#E03131] hover:bg-[#c42727]" data-testid="res-submit-btn">{editing ? "Salva" : "Crea prenotazione"}</Button>
+            {editing && editing.email && (
+              <div className="border-t border-gray-200 pt-4 space-y-2" data-testid="res-notify-section">
+                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Email al cliente</div>
+                <div className="text-xs text-gray-500">
+                  {editing.notify?.ricevuta && <div>Ricevuta: {new Date(editing.notify.ricevuta).toLocaleString("it-IT")}</div>}
+                  {editing.notify?.conferma && <div>Conferma: {new Date(editing.notify.conferma).toLocaleString("it-IT")}</div>}
+                  {editing.notify?.promemoria && <div>Promemoria: {new Date(editing.notify.promemoria).toLocaleString("it-IT")}</div>}
+                  {!editing.notify?.ricevuta && !editing.notify?.conferma && !editing.notify?.promemoria && <div>Nessuna email inviata finora.</div>}
+                </div>
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" className="h-10 flex-1" disabled={sending} onClick={() => resend("conferma")} data-testid="res-send-conferma-btn"><MailCheck size={14} className="mr-1" />{editing.notify?.conferma ? "Reinvia conferma" : "Invia conferma"}</Button>
+                  <Button type="button" variant="outline" className="h-10 flex-1" disabled={sending} onClick={() => resend("promemoria")} data-testid="res-send-promemoria-btn"><Bell size={14} className="mr-1" />Invia promemoria</Button>
+                </div>
+                <p className="text-[11px] text-gray-400">Il promemoria parte automaticamente alle 10:00 del giorno della prenotazione per le prenotazioni confermate.</p>
+              </div>
+            )}
           </form>
         </SheetContent>
       </Sheet>

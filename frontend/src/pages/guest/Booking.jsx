@@ -70,6 +70,7 @@ export default function Booking() {
             <p className="text-[#57534e] leading-relaxed">
               Grazie <b>{done.name}</b>. La tua prenotazione per <b>{done.guests}</b> {done.guests === 1 ? "persona" : "persone"} il <b>{new Date(done.date + "T12:00:00").toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" })}</b> alle <b>{done.time}</b> è in attesa di conferma da parte del ristorante.
             </p>
+            {done.email && <p className="text-sm text-[#78716c]" data-testid="booking-email-note">Ti abbiamo inviato una ricevuta a <b>{done.email}</b>: riceverai la conferma e un promemoria il giorno stesso.</p>}
             <Button variant="outline" onClick={() => { setDone(null); setForm({ ...form, time: "", name: "", notes: "" }); }} data-testid="booking-again-btn">Nuova prenotazione</Button>
           </div>
         ) : (
@@ -105,7 +106,7 @@ export default function Booking() {
               <div className="space-y-1"><Label>Nome e cognome</Label><Input className="h-12" value={form.name} onChange={f("name")} required data-testid="booking-name" /></div>
               <div className="grid sm:grid-cols-2 gap-4">
                 <div className="space-y-1"><Label>Telefono</Label><Input type="tel" className="h-12" value={form.phone} onChange={f("phone")} required data-testid="booking-phone" /></div>
-                <div className="space-y-1"><Label>Email (opzionale)</Label><Input type="email" className="h-12" value={form.email} onChange={f("email")} data-testid="booking-email" /></div>
+                <div className="space-y-1"><Label>Email (per conferma e promemoria)</Label><Input type="email" className="h-12" value={form.email} onChange={f("email")} data-testid="booking-email" /></div>
               </div>
               <div className="space-y-1"><Label>Note (allergie, seggiolone…)</Label><Textarea value={form.notes} onChange={f("notes")} data-testid="booking-notes" /></div>
             </section>
