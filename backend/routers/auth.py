@@ -33,7 +33,7 @@ async def user_payload(user: dict) -> dict:
 @router.post("/login")
 async def login(body: LoginIn, request: Request, response: Response):
     email = body.email.lower().strip()
-    ident = f"{request.client.host if request.client else 'x'}:{email}"
+    ident = f"login:{email}"
     attempt = await db.login_attempts.find_one({"identifier": ident})
     if attempt and attempt.get("count", 0) >= MAX_ATTEMPTS:
         locked_until = datetime.fromisoformat(attempt["locked_until"])

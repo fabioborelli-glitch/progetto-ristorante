@@ -170,6 +170,8 @@ async def create_table(body: TableCreate, p: Principal = Depends(require_tenant(
 async def update_table(table_id: str, body: TableUpdate, p: Principal = Depends(require_tenant())):
     await get_scoped_or_404(p, "tables", table_id)
     upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    if any(k in upd for k in ("x", "y", "name", "seats", "shape", "room_id")) and ROLE_RANK[p.tenant_role] < ROLE_RANK["manager"]:
+        raise HTTPException(status_code=403, detail="Solo manager e owner possono modificare i tavoli")
     if "status" in upd and upd["status"] not in TABLE_STATUSES:
         raise HTTPException(status_code=400, detail="Stato non valido")
     if upd.get("status") == "libero":

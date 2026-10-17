@@ -1,0 +1,55 @@
+# RistoOS — PRD
+
+## Problem statement (originale)
+Gestionale SaaS multi-tenant per ristoranti, catene e agenzie che gestiscono più locali. Ispirato alle funzionalità standard di mercato (Baliflow / Restaurant Flow), non un clone.
+Scelte utente (giugno 2026): MVP = **Prenotazioni + piantina sala** e **Menu digitale + QR ordering + KDS**. **Super-admin agenzia dal day 1**. Pagamenti online rimandati. Nessuna notifica per ora. Nome: RistoOS, UI in italiano.
+
+## Personas
+- Super-admin agenzia: crea tenant, invita/crea owner, entra in qualsiasi ristorante
+- Owner / Manager: configura locale, sala, menu, QR, team
+- Staff (sala/cucina): gestisce tavoli, prenotazioni, KDS
+- Cliente finale: prenota online, ordina dal QR al tavolo
+
+## Architettura
+- Backend FastAPI + MongoDB (motor). `tenant_id` su ogni collection tenant; scoping via `tq()` + `get_scoped_or_404` (core.py)
+- Auth JWT (PyJWT, bcrypt) — access token Bearer + cookie httpOnly; lockout 5 tentativi / 15 min per email
+- Ruoli: `platform_role` (superadmin) separato da `tenant_role` (owner > manager > staff). Superadmin impersona via header `X-Tenant-Id`
+- Router: `/api/auth`, `/api/admin` (superadmin), `/api/t` (tenant-scoped), `/api/public/{slug}` (anonimo)
+- Frontend React (CRA + craco), shadcn/ui, Tailwind, lucide. Font: Cabinet Grotesk + IBM Plex Sans. PWA manifest base
+- KDS e sala in polling (4s / 8s), no WebSocket per ora
+- Nota tecnica: cartella `src/pages/public` rinominata `src/pages/guest` (webpack ignora `**/public/**`)
+
+## Implementato (17/06/2026)
+- Login, sessione, logout, cambio password, lockout brute-force
+- Super-admin: lista tenant con contatori, creazione tenant + owner, attiva/sospendi, "Entra come owner", switch
+- Dashboard: KPI giorno (prenotazioni, coperti, ordini aperti, incasso), prossime prenotazioni, stato tavoli, piatti top
+- Sala: sale multiple, tavoli drag&drop (edit mode, manager+), stato libero/occupato/in attesa conto, sheet tavolo con ordini aperti, badge ordini
+- Prenotazioni: lista per giorno, creazione/modifica, stati (in attesa → confermata → seduta → completata, annullata, no show), assegnazione tavolo, link pubblico
+- Prenotazione online pubblica `/r/{slug}/prenota` con disponibilità per fascia e capienza per slot
+- Menu: categorie (IT/EN), piatti con descrizione, prezzo, allergeni (14 UE), varianti con sovrapprezzo, immagine URL, disponibilità
+- QR tavoli: pagina stampabile con QR per tavolo + QR prenotazioni
+- Menu cliente `/r/{slug}/menu?t=CODE`: mobile-first, carrello, varianti, note, invio ordine, pagina stato ordine con polling
+- KDS `/kds`: dark mode, ticket per stato, bump nuovo → in preparazione → pronto → servito, filtri, beep nuovi ordini, auto "in attesa conto" quando tutti gli ordini del tavolo sono serviti
+- Impostazioni: dati locale, fasce orarie, capienza, team (crea/elimina utenti, ruoli ≤ proprio)
+- Seed: superadmin + tenant demo "Trattoria da Fabio" con sale, tavoli, menu, prenotazioni
+
+## Backlog prioritario
+### P0 (prossimo)
+- POS cassa: apertura/chiusura conto, split bill, sconti, scontrino PDF non fiscale
+- Inviti owner/staff via email (ora password iniziale impostata da chi crea)
+### P1
+- Pagamenti Stripe (acconto prenotazione, paga al tavolo)
+- Notifiche email (Resend) / WhatsApp (Twilio) per prenotazioni
+- Upload immagini menu/logo su Object Storage (ora solo URL)
+- Realtime WebSocket per KDS e sala
+- Menu multilingua completo (ora solo nome EN)
+- Eliminazione tenant, audit log
+### P2 (Fase 2/3 del piano)
+- Magazzino + food cost, staff e turni, RBAC granulare, consolidato multi-locale
+- Fatturazione elettronica SDI (Acube), RT corrispettivi
+- App nativa camerieri, CRM/fidelity, AI suggerimenti menu
+
+## Test
+- Report: /app/test_reports/iteration_1.json (backend 27/28 → lockout fix applicato, frontend 100% smoke)
+- Suite regressione: `cd /app/backend && python -m pytest tests/backend_test.py -v`
+- Credenziali: /app/memory/test_credentials.md

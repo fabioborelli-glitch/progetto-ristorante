@@ -1,0 +1,39 @@
+{
+  "summary": "First end-to-end test run of RistoOS MVP. Backend: 27/28 pytest tests pass (96%). Covered auth (login/me/wrong-password/unauth/lockout), super-admin tenants CRUD + impersonation (X-Tenant-Id), tenant settings/rooms/tables/positions/reservations/menu/orders/dashboard, public booking + capacity enforcement + QR menu + full order lifecycle (nuovo -> servito -> table auto in_attesa_conto) and authorization matrix (cross-tenant 404, staff cannot create tables, staff cannot create users). Frontend smoke-tested: login as owner lands on /dashboard with all 4 KPI testids, Sala renders 8 table nodes, Prenotazioni/Menu/QR/KDS pages all expose expected data-testids, public /r/trattoria-demo/menu?t=DEMO01 shows menu-table-badge + 13 add buttons, no-table variant shows menu-no-table and 0 add buttons, public /prenota exposes guests-plus/slot-*/booking-submit, super-admin /admin lists tenants with create-tenant-btn and enter-tenant-<slug>, switch-tenant-btn appears after impersonation.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/auth/login", "issue": "Brute-force lockout (5 fails -> 429) does NOT trigger behind the Kubernetes ingress. Identifier is built from request.client.host which is the ingress hop IP and rotates across pods (observed 10.227.1.198 / 10.227.1.200 in login_attempts collection). Attempts are split per hop so count never reaches 5. Lockout is effectively bypassed in the preview/production environment."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Fix brute-force lockout identifier: use X-Forwarded-For (first IP) or just the email as identifier for login_attempts, otherwise the 5-fails/15-min lockout documented in the spec is non-functional behind the ingress."
+  ],
+  "critical_code_review_comments": [
+    "core.py set_auth_cookies uses secure=True + samesite='none' which is correct for cross-site cookies, but ensure the frontend fetch calls use credentials:'include' consistently (currently the login response also returns access_token in body and the frontend stores it in localStorage key ristoos_token, so this is fine).",
+    "auth.py login lockout keys off request.client.host which is unreliable behind proxies; prefer email-only or X-Forwarded-For.",
+    "public.py place_order does not revalidate variant_price_delta against a numeric type (Pydantic covers it) and does not clamp qty upper bound; low priority.",
+    "tenant.py update_table allows any authenticated tenant user (require_tenant() default staff) to change table status/position, including dragging. Spec says drag/positions should be manager+ (PUT /tables/positions is already manager, but PATCH with x/y bypasses that gate). Consider gating x/y mutation to manager.",
+    "server.py seed_demo_tenant is idempotent only by presence of tenant slug; if seed data is partially deleted it won't repair. Acceptable for MVP.",
+    "No pagination on list endpoints (to_list(500/1000)) — fine for MVP but flag for scale."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (new regression suite)"
+  ],
+  "success_rate": {"backend": "96% (27/28)", "frontend": "100% smoke of listed test-ids"},
+  "test_credentials": "Super-admin fabio.borelli@icloud.com / RistoOS2026!; Owner owner@trattoria-demo.it / Demo2026!; both verified via /api/auth/login.",
+  "seed_data_creation": "Tests create ephemeral tenants prefixed TEST_ (deactivated after test via PATCH active=false), menu items TEST_Dish, reservations TEST_*, staff users TEST_staff_*. No deletion endpoint for tenants so inactive tenants remain visible in /admin UI; owner acts expire with password still valid but tenant.active=false blocks public endpoints.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend regression suite at /app/backend/tests/backend_test.py runs in ~9s with xdist (2 workers). Run: `cd /app/backend && python -m pytest tests/backend_test.py -v --junitxml=/app/test_reports/pytest/pytest_results.xml`. The lockout test is expected to fail until identifier logic is fixed. Frontend has data-testids on all key elements; public pages at /r/<slug>/prenota and /r/<slug>/menu?t=<code> work anonymously. Super-admin impersonates via header X-Tenant-Id for /api/t/* calls.",
+  "rca of the issue": "LOCKOUT RCA: /api/auth/login builds identifier = f\"{request.client.host}:{email}\". In this Kubernetes environment ingress forwards traffic through multiple hops, so request.client.host observed in Mongo was 10.227.1.198 and 10.227.1.200 across different attempts, splitting counts between two documents (each reached 3) and never crossing MAX_ATTEMPTS=5. Reproduction: 6 consecutive wrong-password POSTs returned [401,401,401,401,401,401] instead of 5x401 then 429. Mitigation: use request.headers.get('X-Forwarded-For','').split(',')[0].strip() or simply the email as identifier."
+}
