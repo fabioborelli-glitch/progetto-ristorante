@@ -23,6 +23,10 @@ export function errMsg(e, fallback = "Si è verificato un errore") {
 export const fmtEur = (n) =>
   new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(n || 0);
 
+export const imgUrl = (u) => (u && u.startsWith("/api/") ? `${process.env.REACT_APP_BACKEND_URL}${u}` : u);
+
+export const PAY_METHODS = { contanti: "Contanti", carta: "Carta / POS" };
+
 export const todayStr = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;

@@ -2,10 +2,11 @@ from typing import Optional, List
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from core import db, new_id, now_iso, ser
+from services.ws import hub
 
 router = APIRouter(prefix="/public", tags=["public"])
 
-PUBLIC_TENANT_FIELDS = ["id", "name", "slug", "city", "address", "phone", "description", "slots", "currency"]
+PUBLIC_TENANT_FIELDS = ["id", "name", "slug", "city", "address", "phone", "description", "slots", "currency", "logo_url"]
 
 
 async def get_tenant(slug: str) -> dict:
@@ -61,6 +62,7 @@ async def book(slug: str, body: PublicReservation):
     doc = {"_id": new_id(), "tenant_id": t["_id"], **body.model_dump(), "table_id": None,
            "status": "in_attesa", "source": "online", "created_at": now_iso()}
     await db.reservations.insert_one(doc)
+    await hub.emit(t["_id"], "reservations_changed")
     return ser(doc)
 
 
@@ -119,9 +121,12 @@ async def place_order(slug: str, body: PublicOrder):
         total += price * l.qty
     doc = {"_id": new_id(), "tenant_id": t["_id"], "table_id": table["_id"], "table_name": table["name"],
            "customer_name": body.customer_name or "", "notes": body.notes or "", "items": lines,
-           "total": round(total, 2), "status": "nuovo", "source": "qr", "created_at": now_iso(), "updated_at": now_iso()}
+           "total": round(total, 2), "status": "nuovo", "source": "qr", "bill_id": None,
+           "created_at": now_iso(), "updated_at": now_iso()}
     await db.orders.insert_one(doc)
     await db.tables.update_one({"_id": table["_id"]}, {"$set": {"status": "occupato"}})
+    await hub.emit(t["_id"], "orders_changed", {"order_id": doc["_id"], "table_name": table["name"]})
+    await hub.emit(t["_id"], "tables_changed")
     return ser(doc)
 
 

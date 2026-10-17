@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { Plus, ChevronLeft, ChevronRight, Phone, Users, Link as LinkIcon } from "lucide-react";
 import { api, errMsg, todayStr, RES_STATUS } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { useTenantSocket } from "@/hooks/useTenantSocket";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,6 +32,9 @@ export default function Reservations() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { api.get("/t/tables").then((r) => setTables(r.data)); }, []);
+  useTenantSocket((event) => {
+    if (event === "reservations_changed") { load(); toast.info("Nuova prenotazione online ricevuta"); }
+  });
 
   const openNew = () => { setEditing(null); setForm({ ...EMPTY, date }); setOpen(true); };
   const openEdit = (r) => { setEditing(r); setForm({ ...r }); setOpen(true); };

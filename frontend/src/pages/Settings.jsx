@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Mail, Copy, X } from "lucide-react";
 import { api, errMsg } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { ImageUpload } from "@/components/ImageUpload";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,11 +17,17 @@ export default function Settings() {
   const canEdit = role === "owner" || role === "manager";
   const [s, setS] = useState(null);
   const [users, setUsers] = useState([]);
+  const [invites, setInvites] = useState([]);
   const [slotsText, setSlotsText] = useState("");
-  const [nu, setNu] = useState({ name: "", email: "", password: "", tenant_role: "staff" });
+  const [nu, setNu] = useState({ name: "", email: "", tenant_role: "staff" });
+  const [inviting, setInviting] = useState(false);
   const [pw, setPw] = useState({ current_password: "", new_password: "" });
 
-  const loadUsers = () => canEdit && api.get("/t/users").then((r) => setUsers(r.data)).catch(() => {});
+  const loadUsers = () => {
+    if (!canEdit) return;
+    api.get("/t/users").then((r) => setUsers(r.data)).catch(() => {});
+    api.get("/t/invites").then((r) => setInvites(r.data)).catch(() => {});
+  };
 
   useEffect(() => {
     api.get("/t/settings").then((r) => { setS(r.data); setSlotsText(r.data.slots.join(", ")); }).catch((e) => toast.error(errMsg(e)));
@@ -31,7 +38,7 @@ export default function Settings() {
     e.preventDefault();
     const slots = slotsText.split(",").map((x) => x.trim()).filter(Boolean);
     try {
-      const { data } = await api.patch("/t/settings", { name: s.name, address: s.address, city: s.city, phone: s.phone, description: s.description, slots, capacity_per_slot: +s.capacity_per_slot });
+      const { data } = await api.patch("/t/settings", { name: s.name, address: s.address, city: s.city, phone: s.phone, description: s.description, slots, capacity_per_slot: +s.capacity_per_slot, logo_url: s.logo_url || "" });
       setS(data);
       toast.success("Impostazioni salvate");
       if (!isSuper) refresh();
@@ -42,14 +49,21 @@ export default function Settings() {
 
   const addUser = async (e) => {
     e.preventDefault();
+    setInviting(true);
     try {
-      await api.post("/t/users", nu);
-      toast.success("Utente creato");
-      setNu({ name: "", email: "", password: "", tenant_role: "staff" });
+      const { data } = await api.post("/t/invites", nu);
+      toast.success(`Invito inviato a ${data.email}`);
+      setNu({ name: "", email: "", tenant_role: "staff" });
       loadUsers();
     } catch (err) {
       toast.error(errMsg(err));
+    } finally {
+      setInviting(false);
     }
+  };
+
+  const revokeInvite = async (inv) => {
+    try { await api.delete(`/t/invites/${inv.id}`); loadUsers(); } catch (err) { toast.error(errMsg(err)); }
   };
 
   const delUser = async (u) => {
@@ -84,6 +98,7 @@ export default function Settings() {
           <div className="space-y-1"><Label>Città</Label><Input className="h-11" value={s.city || ""} onChange={f("city")} disabled={!canEdit} data-testid="settings-city" /></div>
         </div>
         <div className="space-y-1"><Label>Descrizione (pagina pubblica)</Label><Textarea value={s.description || ""} onChange={f("description")} disabled={!canEdit} data-testid="settings-description" /></div>
+        {canEdit && <div className="max-w-[112px]"><ImageUpload value={s.logo_url || ""} onChange={(u) => setS({ ...s, logo_url: u })} label="Logo" shape="square" testid="logo-upload" /></div>}
         <h2 className="font-display text-lg font-bold pt-2">Prenotazioni online</h2>
         <div className="grid md:grid-cols-3 gap-4">
           <div className="md:col-span-2 space-y-1"><Label>Fasce orarie (separate da virgola)</Label><Input className="h-11" value={slotsText} onChange={(e) => setSlotsText(e.target.value)} disabled={!canEdit} data-testid="settings-slots" /></div>
@@ -105,10 +120,9 @@ export default function Settings() {
               </div>
             ))}
           </div>
-          <form onSubmit={addUser} className="grid md:grid-cols-5 gap-3 items-end" data-testid="add-user-form">
+          <form onSubmit={addUser} className="grid md:grid-cols-4 gap-3 items-end" data-testid="add-user-form">
             <div className="space-y-1"><Label>Nome</Label><Input className="h-11" value={nu.name} onChange={(e) => setNu({ ...nu, name: e.target.value })} required data-testid="new-user-name" /></div>
             <div className="space-y-1"><Label>Email</Label><Input className="h-11" type="email" value={nu.email} onChange={(e) => setNu({ ...nu, email: e.target.value })} required data-testid="new-user-email" /></div>
-            <div className="space-y-1"><Label>Password</Label><Input className="h-11" value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })} required data-testid="new-user-password" /></div>
             <div className="space-y-1"><Label>Ruolo</Label>
               <Select value={nu.tenant_role} onValueChange={(v) => setNu({ ...nu, tenant_role: v })}>
                 <SelectTrigger className="h-11" data-testid="new-user-role"><SelectValue /></SelectTrigger>
@@ -119,8 +133,23 @@ export default function Settings() {
                 </SelectContent>
               </Select>
             </div>
-            <Button type="submit" className="h-11 bg-gray-900 hover:bg-gray-800" data-testid="add-user-btn"><Plus size={16} className="mr-1" />Aggiungi</Button>
+            <Button type="submit" className="h-11 bg-gray-900 hover:bg-gray-800" disabled={inviting} data-testid="add-user-btn"><Mail size={16} className="mr-1" />{inviting ? "Invio…" : "Invita via email"}</Button>
           </form>
+          {invites.length > 0 && (
+            <div className="space-y-2" data-testid="pending-invites">
+              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Inviti in attesa</div>
+              <div className="divide-y divide-gray-100 border border-gray-200 rounded-lg">
+                {invites.map((inv) => (
+                  <div key={inv.id} className="flex items-center gap-3 px-4 py-3 text-sm" data-testid={`invite-row-${inv.email}`}>
+                    <Mail size={16} className="text-gray-400" />
+                    <div className="flex-1"><div className="font-medium">{inv.name}</div><div className="text-gray-500 text-xs">{inv.email} · scade {new Date(inv.expires_at).toLocaleDateString("it-IT")}</div></div>
+                    <span className="text-xs bg-amber-50 text-amber-800 px-2 py-1 rounded-full">{ROLE_LABEL[inv.tenant_role]}</span>
+                    <Button variant="ghost" size="icon" className="text-gray-500" onClick={() => revokeInvite(inv)} data-testid={`revoke-invite-${inv.email}`}><X size={16} /></Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
       )}
 

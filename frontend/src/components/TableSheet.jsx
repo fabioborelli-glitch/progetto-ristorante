@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Trash2, QrCode } from "lucide-react";
+import { Trash2, QrCode, Receipt } from "lucide-react";
 import { api, errMsg, fmtEur, TABLE_STATUS, ORDER_STATUS } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 
 export function TableSheet({ table, onClose, onChanged, canEdit }) {
   const { tenant } = useAuth();
+  const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
   const [edit, setEdit] = useState({ name: "", seats: 4 });
 
@@ -69,6 +71,9 @@ export function TableSheet({ table, onClose, onChanged, canEdit }) {
         </SheetHeader>
 
         <div className="mt-6 space-y-8">
+          <button onClick={() => navigate(`/cassa?table=${table.id}`)} className="w-full h-16 rounded-xl bg-[#E03131] text-white font-display text-xl font-extrabold flex items-center justify-center gap-3 active:scale-[0.98] transition-transform" data-testid="go-to-pos-btn">
+            <Receipt size={22} /> {table.status === "libero" ? "Apri conto in cassa" : "Vai al conto"}
+          </button>
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Cambia stato</div>
             <div className="grid grid-cols-1 gap-2">

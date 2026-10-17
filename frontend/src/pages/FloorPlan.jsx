@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { Plus, Pencil, Check } from "lucide-react";
 import { api, errMsg, TABLE_STATUS } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { useTenantSocket } from "@/hooks/useTenantSocket";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -41,9 +42,13 @@ export default function FloorPlan() {
   useEffect(() => {
     loadTables();
     if (editMode) return;
-    const t = setInterval(loadTables, 8000);
+    const t = setInterval(loadTables, 30000);
     return () => clearInterval(t);
   }, [loadTables, editMode]);
+
+  useTenantSocket((event) => {
+    if ((event === "tables_changed" || event === "orders_changed") && !drag.current) loadTables();
+  });
 
   const onPointerDown = (e, t) => {
     if (!editMode) return;

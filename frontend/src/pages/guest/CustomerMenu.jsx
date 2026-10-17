@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import { ShoppingBag, Plus, Minus, X, Info } from "lucide-react";
-import { api, errMsg, fmtEur, ALLERGEN_LABELS } from "@/lib/api";
+import { api, errMsg, fmtEur, imgUrl, ALLERGEN_LABELS } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -66,14 +66,17 @@ export default function CustomerMenu() {
 
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-[#292524] pb-28" data-testid="customer-menu-page">
-      <header className="px-5 pt-8 pb-4 max-w-2xl mx-auto">
-        <div className="text-xs uppercase tracking-widest text-[#D97706] font-bold">Menu digitale</div>
-        <h1 className="font-display text-4xl font-extrabold tracking-tight leading-none mt-1" data-testid="menu-restaurant-name">{data.restaurant.name}</h1>
-        {data.table ? (
-          <div className="mt-3 inline-flex items-center gap-2 bg-[#292524] text-white text-sm px-3 py-1.5 rounded-full" data-testid="menu-table-badge">Tavolo {data.table.name}</div>
-        ) : (
-          <div className="mt-3 text-sm text-[#78716c] inline-flex items-center gap-1.5" data-testid="menu-no-table"><Info size={14} />Solo consultazione — inquadra il QR sul tavolo per ordinare.</div>
-        )}
+      <header className="px-5 pt-8 pb-4 max-w-2xl mx-auto flex items-start gap-4">
+        <div className="flex-1">
+          <div className="text-xs uppercase tracking-widest text-[#D97706] font-bold">Menu digitale</div>
+          <h1 className="font-display text-4xl font-extrabold tracking-tight leading-none mt-1" data-testid="menu-restaurant-name">{data.restaurant.name}</h1>
+          {data.table ? (
+            <div className="mt-3 inline-flex items-center gap-2 bg-[#292524] text-white text-sm px-3 py-1.5 rounded-full" data-testid="menu-table-badge">Tavolo {data.table.name}</div>
+          ) : (
+            <div className="mt-3 text-sm text-[#78716c] inline-flex items-center gap-1.5" data-testid="menu-no-table"><Info size={14} />Solo consultazione — inquadra il QR sul tavolo per ordinare.</div>
+          )}
+        </div>
+        {data.restaurant.logo_url && <img src={imgUrl(data.restaurant.logo_url)} alt="" className="h-16 w-16 rounded-2xl object-cover border border-[#e7e0d3]" data-testid="menu-logo" />}
       </header>
 
       <nav className="sticky top-0 z-10 bg-[#FDFBF7]/95 backdrop-blur border-b border-[#e7e0d3]">
@@ -109,7 +112,7 @@ export default function CustomerMenu() {
                         )}
                       </div>
                     </div>
-                    {it.image_url && <img src={it.image_url} alt={it.name} className="h-24 w-24 rounded-xl object-cover shrink-0" />}
+                    {it.image_url && <img src={imgUrl(it.image_url)} alt={it.name} className="h-24 w-24 rounded-xl object-cover shrink-0" />}
                   </div>
                 ))}
               </div>

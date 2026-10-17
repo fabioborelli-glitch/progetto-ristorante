@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, EmailStr
 from core import (db, new_id, now_iso, ser, tq, get_scoped_or_404, require_tenant, Principal,
                   hash_password, TENANT_ROLES, ROLE_RANK)
+from services.ws import hub
 
 router = APIRouter(prefix="/t", tags=["tenant"])
 
@@ -29,6 +30,7 @@ class TenantSettings(BaseModel):
     description: Optional[str] = None
     slots: Optional[List[str]] = None
     capacity_per_slot: Optional[int] = None
+    logo_url: Optional[str] = None
 
 
 @router.get("/settings")
@@ -178,6 +180,9 @@ async def update_table(table_id: str, body: TableUpdate, p: Principal = Depends(
         await db.orders.update_many(tq(p, {"table_id": table_id, "status": {"$in": ["nuovo", "in_preparazione", "pronto"]}}),
                                     {"$set": {"status": "servito", "updated_at": now_iso()}})
     res = await db.tables.find_one_and_update(tq(p, {"_id": table_id}), {"$set": upd}, return_document=True)
+    await hub.emit(p.tenant_id, "tables_changed")
+    if upd.get("status") == "libero":
+        await hub.emit(p.tenant_id, "orders_changed")
     return ser(res)
 
 
@@ -247,6 +252,7 @@ async def update_reservation(res_id: str, body: ReservationUpdate, p: Principal 
         tid = upd.get("table_id") or current.get("table_id")
         if tid:
             await db.tables.update_one(tq(p, {"_id": tid}), {"$set": {"status": "occupato"}})
+            await hub.emit(p.tenant_id, "tables_changed")
     res = await db.reservations.find_one_and_update(tq(p, {"_id": res_id}), {"$set": upd}, return_document=True)
     return ser(res)
 
@@ -383,6 +389,8 @@ async def set_order_status(order_id: str, body: OrderStatusIn, p: Principal = De
         if remaining == 0:
             await db.tables.update_one(tq(p, {"_id": order["table_id"], "status": "occupato"}),
                                        {"$set": {"status": "in_attesa_conto"}})
+            await hub.emit(p.tenant_id, "tables_changed")
+    await hub.emit(p.tenant_id, "orders_changed")
     return ser(res)
 
 
@@ -393,10 +401,15 @@ async def dashboard(p: Principal = Depends(require_tenant())):
     res_today = await db.reservations.find(tq(p, {"date": today, "status": {"$nin": ["annullata", "no_show"]}})).to_list(500)
     orders_today = await db.orders.find(tq(p, {"created_at": {"$gte": today}, "status": {"$ne": "annullato"}})).to_list(2000)
     tables = await db.tables.find(tq(p)).to_list(300)
+    closed_bills = await db.bills.find(tq(p, {"status": "chiuso", "closed_at": {"$gte": today}})).to_list(2000)
     top = {}
     revenue = 0.0
+    for b in closed_bills:
+        subtotal = sum(l["qty"] * l["price"] for l in b.get("lines", []))
+        dv = float(b.get("discount_value") or 0)
+        disc = subtotal * dv / 100 if b.get("discount_type") == "percent" else (min(dv, subtotal) if b.get("discount_type") == "amount" else 0)
+        revenue += subtotal - disc
     for o in orders_today:
-        revenue += o.get("total", 0)
         for it in o.get("items", []):
             top[it["name"]] = top.get(it["name"], 0) + it["qty"]
     top_items = sorted(({"name": k, "qty": v} for k, v in top.items()), key=lambda x: -x["qty"])[:5]
@@ -411,6 +424,7 @@ async def dashboard(p: Principal = Depends(require_tenant())):
         "orders_today": len(orders_today),
         "open_orders": sum(1 for o in orders_today if o["status"] in ("nuovo", "in_preparazione", "pronto")),
         "revenue_today": round(revenue, 2),
+        "bills_today": len(closed_bills),
         "tables": status_counts,
         "top_items": top_items,
         "upcoming": [ser(r) for r in upcoming],

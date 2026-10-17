@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { ChefHat, Volume2, VolumeX, ArrowLeft } from "lucide-react";
+import { ChefHat, Volume2, VolumeX, ArrowLeft, Wifi, WifiOff } from "lucide-react";
 import { api, errMsg, ORDER_STATUS } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { useTenantSocket } from "@/hooks/useTenantSocket";
 
 const NEXT = { nuovo: ["in_preparazione", "Inizia"], in_preparazione: ["pronto", "Pronto"], pronto: ["servito", "Servito"] };
 
@@ -38,10 +39,14 @@ export default function Kds() {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 4000);
+    const t = setInterval(load, 20000);
     const tk = setInterval(() => tick((x) => x + 1), 30000);
     return () => { clearInterval(t); clearInterval(tk); };
   }, [load]);
+
+  const connected = useTenantSocket((event) => {
+    if (event === "orders_changed") load();
+  });
 
   const bump = async (o) => {
     const [status] = NEXT[o.status];
@@ -80,6 +85,7 @@ export default function Kds() {
           ))}
         </div>
         <div className="ml-auto flex items-center gap-2">
+          <span className={`inline-flex items-center gap-1.5 text-xs px-3 h-11 rounded-full ${connected ? "bg-emerald-500/15 text-emerald-300" : "bg-[#171717] text-gray-500"}`} data-testid="kds-ws-status">{connected ? <Wifi size={14} /> : <WifiOff size={14} />}{connected ? "Live" : "Riconnessione…"}</span>
           <button onClick={() => setSound(!sound)} className="h-11 w-11 grid place-items-center rounded-full bg-[#171717] hover:bg-[#262626]" data-testid="kds-sound-toggle">{sound ? <Volume2 size={18} /> : <VolumeX size={18} />}</button>
           {tenant && <Link to="/dashboard" className="h-11 px-4 inline-flex items-center gap-2 rounded-full bg-[#171717] hover:bg-[#262626] text-sm" data-testid="kds-back-link"><ArrowLeft size={16} />Gestionale</Link>}
         </div>

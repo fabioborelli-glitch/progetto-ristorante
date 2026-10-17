@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
-const EMPTY = { name: "", slug: "", city: "", owner_name: "", owner_email: "", owner_password: "" };
+const EMPTY = { name: "", slug: "", city: "", owner_name: "", owner_email: "", owner_password: "", send_invite: true };
 
 export default function Tenants() {
   const { user, logout, setActAs, isSuper } = useAuth();
@@ -31,8 +31,8 @@ export default function Tenants() {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.post("/admin/tenants", form);
-      toast.success("Ristorante creato");
+      const { data } = await api.post("/admin/tenants", form);
+      toast.success(data.invite_sent_to ? `Ristorante creato, invito inviato a ${data.invite_sent_to}` : "Ristorante creato");
       setOpen(false);
       setForm(EMPTY);
       load();
@@ -127,9 +127,13 @@ export default function Tenants() {
             <div className="pt-3 border-t border-gray-200 text-sm font-semibold text-gray-700">Account owner</div>
             <Field label="Nome owner" value={form.owner_name} onChange={f("owner_name")} required testid="owner-name-input" />
             <Field label="Email owner" type="email" value={form.owner_email} onChange={f("owner_email")} required testid="owner-email-input" />
-            <Field label="Password iniziale (min 8)" type="text" value={form.owner_password} onChange={f("owner_password")} required testid="owner-password-input" />
+            <label className="flex items-center gap-3 text-sm bg-gray-50 border border-gray-200 rounded-lg p-3">
+              <Switch checked={form.send_invite} onCheckedChange={(v) => setForm({ ...form, send_invite: v })} data-testid="send-invite-switch" />
+              <span>{form.send_invite ? "Invia invito via email: l'owner sceglie la sua password" : "Imposta tu la password iniziale"}</span>
+            </label>
+            {!form.send_invite && <Field label="Password iniziale (min 8)" type="text" value={form.owner_password} onChange={f("owner_password")} required testid="owner-password-input" />}
             <Button type="submit" className="w-full h-12 bg-[#E03131] hover:bg-[#c42727]" disabled={saving} data-testid="tenant-submit-btn">
-              {saving ? "Creazione…" : "Crea ristorante"}
+              {saving ? "Creazione…" : form.send_invite ? "Crea e invia invito" : "Crea ristorante"}
             </Button>
           </form>
         </SheetContent>

@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, X } from "lucide-react";
-import { api, errMsg, fmtEur, ALLERGEN_LABELS } from "@/lib/api";
+import { api, errMsg, fmtEur, imgUrl, ALLERGEN_LABELS } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { ImageUpload } from "@/components/ImageUpload";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -114,7 +115,7 @@ export default function MenuManager() {
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="menu-items-grid">
         {visible.map((it) => (
           <div key={it.id} className={`bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col transition-transform duration-200 hover:-translate-y-1 ${!it.available ? "opacity-60" : ""}`} data-testid={`menu-item-card-${it.id}`}>
-            {it.image_url && <img src={it.image_url} alt={it.name} className="h-36 w-full object-cover" />}
+            {it.image_url && <img src={imgUrl(it.image_url)} alt={it.name} className="h-36 w-full object-cover" />}
             <div className="p-5 flex-1 flex flex-col gap-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -160,8 +161,8 @@ export default function MenuManager() {
             <div className="space-y-1"><Label>Descrizione</Label><Textarea value={form.description || ""} onChange={f("description")} data-testid="item-description-input" /></div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1"><Label>Prezzo (€)</Label><Input className="h-11" type="number" step="0.5" min={0} value={form.price} onChange={f("price")} required data-testid="item-price-input" /></div>
-              <div className="space-y-1"><Label>URL immagine</Label><Input className="h-11" value={form.image_url || ""} onChange={f("image_url")} placeholder="https://…" data-testid="item-image-input" /></div>
             </div>
+            <ImageUpload value={form.image_url} onChange={(u) => setForm({ ...form, image_url: u })} label="Foto del piatto" testid="item-image-upload" />
             <div className="space-y-2">
               <Label>Allergeni</Label>
               <div className="flex flex-wrap gap-1.5">

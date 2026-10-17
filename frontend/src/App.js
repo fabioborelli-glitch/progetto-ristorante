@@ -15,6 +15,8 @@ import Settings from "@/pages/Settings";
 import Booking from "@/pages/guest/Booking";
 import CustomerMenu from "@/pages/guest/CustomerMenu";
 import OrderStatus from "@/pages/guest/OrderStatus";
+import AcceptInvite from "@/pages/guest/AcceptInvite";
+import Pos from "@/pages/Pos";
 
 function Loading() {
   return (
@@ -55,7 +57,9 @@ function App() {
           <Route path="/r/:slug/prenota" element={<Booking />} />
           <Route path="/r/:slug/menu" element={<CustomerMenu />} />
           <Route path="/r/:slug/ordine/:orderId" element={<OrderStatus />} />
+          <Route path="/invito/:token" element={<AcceptInvite />} />
           <Route path="/admin" element={<Protected><Tenants /></Protected>} />
+          <Route path="/cassa" element={<Protected><TenantRoute><Pos /></TenantRoute></Protected>} />
           <Route path="/dashboard" element={<Protected><TenantRoute><Dashboard /></TenantRoute></Protected>} />
           <Route path="/sala" element={<Protected><TenantRoute><FloorPlan /></TenantRoute></Protected>} />
           <Route path="/prenotazioni" element={<Protected><TenantRoute><Reservations /></TenantRoute></Protected>} />

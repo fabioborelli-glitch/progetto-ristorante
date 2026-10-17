@@ -5,12 +5,15 @@ load_dotenv(Path(__file__).parent / ".env")
 
 import os
 import logging
-from fastapi import FastAPI, APIRouter
+import jwt
+from fastapi import FastAPI, APIRouter, WebSocket, WebSocketDisconnect
 from starlette.middleware.cors import CORSMiddleware
 
-from core import db, client, new_id, now_iso, hash_password, verify_password
-from routers import auth, admin, tenant, public
+from core import db, client, new_id, now_iso, hash_password, verify_password, JWT_ALGORITHM
+from routers import auth, admin, tenant, public, invites, files, bills
 from routers.admin import tenant_doc
+from services.ws import hub
+from services.storage import init_storage
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("ristoos")
@@ -27,8 +30,39 @@ async def root():
 api.include_router(auth.router)
 api.include_router(admin.router)
 api.include_router(tenant.router)
+api.include_router(bills.router)
+api.include_router(invites.router)
+api.include_router(files.router)
 api.include_router(public.router)
 app.include_router(api)
+
+
+@app.websocket("/api/ws")
+async def ws_endpoint(ws: WebSocket, token: str, tenant_id: str | None = None):
+    try:
+        payload = jwt.decode(token, os.environ["JWT_SECRET"], algorithms=[JWT_ALGORITHM])
+        user = await db.users.find_one({"_id": payload["sub"]})
+    except Exception:
+        user = None
+    if not user:
+        await ws.close(code=4401)
+        return
+    room = user.get("tenant_id")
+    if user.get("platform_role") == "superadmin" and tenant_id:
+        room = tenant_id
+    if not room:
+        await ws.close(code=4403)
+        return
+    await hub.connect(room, ws)
+    try:
+        while True:
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        hub.disconnect(room, ws)
 
 app.add_middleware(
     CORSMiddleware,
@@ -116,6 +150,14 @@ async def startup():
     for coll in ["rooms", "tables", "reservations", "categories", "menu_items", "orders"]:
         await db[coll].create_index("tenant_id")
     await db.tables.create_index([("tenant_id", 1), ("code", 1)])
+    await db.invites.create_index("token", unique=True)
+    await db.bills.create_index([("tenant_id", 1), ("status", 1)])
+    await db.files.create_index("tenant_id")
+    try:
+        init_storage()
+        logger.info("Storage initialized")
+    except Exception as e:
+        logger.error(f"Storage init failed: {e}")
     await upsert_user(os.environ["ADMIN_EMAIL"], os.environ["ADMIN_PASSWORD"], "Super Admin",
                       platform_role="superadmin", tenant_id=None, tenant_role=None)
     await seed_demo_tenant()
