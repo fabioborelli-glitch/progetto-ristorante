@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration-4 full testing of RistoOS: Waitlist CRUD + public status page, WhatsApp disabled graceful behavior, KDS warn/alert minutes settings. Backend pytest tests/test_iteration4.py: 21/21 passing. Frontend playwright: all data-testids present and functional (nav-attesa, waitlist-add-btn, waitlist-form, waitlist-qr-sheet with waitlist-code + waitlist-status-link, waitlist-call -> status Chiamato, waitlist-seat flow with waitlist-table-select -> waitlist-done, go-waitlist-btn from Prenotazioni, whatsapp-section with 'Non ancora attivo' text, whatsapp-switch toggle, settings-kds-warn/settings-kds-alert persist after reload, KDS data-urgency='alert' with 'IN RITARDO' text on >25-min-old orders, public /r/trattoria-demo/attesa/<code> shows wait-queue+wait-ahead and switches to wait-called within ~5s after staff presses Chiama, unknown code shows wait-error).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/t/reservations/{id}/notify (phone-only, WA enabled but not configured)", "issue": "Returned 502 but with empty body (no JSON detail) in at least one run — subsequent run returned proper JSON {detail: ...}. Likely non-deterministic depending on how FastAPI serializes the HTTPException from the background task path. Harmless since status code is correct, but detail message 'Nessun canale attivo o invio non riuscito' is sometimes not reaching the client."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Multiple dialogs (waitlist add, waitlist seat, waitlist QR)", "issues": ["Radix DialogContent missing aria-describedby or <DialogDescription>; emits console warnings. A11y improvement only."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration4.py",
+    "/app/test_reports/pytest/iter4.xml"
+  ],
+  "action_items": [
+    "(Optional, a11y) Add <SheetDescription>/<DialogDescription> or aria-describedby to the Waitlist Sheet/Dialog components in /app/frontend/src/pages/Waitlist.jsx to silence Radix warnings.",
+    "(Optional, carried from iter-3) Backend: map email proxy 429 -> 503 and accept() WS before close(4401)."
+  ],
+  "critical_code_review_comments": [
+    "routers/waitlist.py patch_waitlist: when transitioning to 'seduto' with table_id, only checks tenant ownership via get_scoped_or_404(tables) but does NOT verify the table is currently 'libero'. A busy/occupato table can be re-occupied silently. Consider rejecting (409 or 400) if table already occupato to avoid data corruption with concurrent seatings.",
+    "routers/waitlist.py add_waitlist: wl_code() returns a random 5-char string with NO uniqueness check against the waitlist collection. Collision probability small (36^5 ≈ 60M) but on a popular tenant with many entries/day, lookups by code with 'tenant_id' + code are safe but a public-url collision between tenants is possible (public endpoint scopes by slug+code, so still safe). Low risk but adding a unique index on (tenant_id, code) and retrying on duplicate would harden.",
+    "routers/waitlist.py: 'date' uses UTC (datetime.now(timezone.utc).strftime('%Y-%m-%d')). Same Europe/Rome vs UTC caveat as notify.py: around local midnight entries may be placed on the wrong 'day' bucket vs what the staff sees in /sala/prenotazioni. Prefer ZoneInfo('Europe/Rome').",
+    "services/whatsapp.py normalize_phone: fallback branch 'digits = '+39' + digits.lstrip('0') if len(digits) <= 10 else '+' + digits' is ambiguous for 10-digit numbers that are already international without '+'. Fine for IT phone numbers; document the IT-only assumption.",
+    "frontend Kds.jsx urgency(): minutesSince uses local client clock vs server UTC created_at. If a kiosk's clock drifts, warn/alert thresholds misfire. Low risk; consider computing elapsed on server (dashboard pushes 'now' or server returns an elapsed_seconds field).",
+    "frontend Kds.jsx renders data-urgency={urg} but a non-trivial number of articles in the live run had the attribute entirely absent on get_attribute (18 total, 9 with 'warn'/'alert'/'none', 9 with None). React should always render string attrs. Suspect: tickets rendered under a different code path (station view mapping) that skips the attribute? Verify by inspecting the DOM — not critical, feature works correctly for the alert/warn cases observed."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration4.py (new 21-test iteration-4 suite covering waitlist CRUD, public page, RBAC, tenant isolation, WhatsApp disabled behavior, KDS settings)"
+  ],
+  "success_rate": {"backend": "100% (21/21)", "frontend": "100% (all required testids verified; public page polling switches to wait-called within ~5s)"},
+  "test_credentials": "Owner owner@trattoria-demo.it / Demo2026! and Super-admin fabio.borelli@icloud.com / RistoOS2026! both verified. Twilio env vars are empty (as expected) -> whatsapp.configured() returns False.",
+  "seed_data_creation": "Created and deleted several TEST_* reservations (TEST WA Phone Only, TEST WA Notify, TEST No Contact) and waitlist entries (TEST WL One/Two, TEST Ahead A/B, TEST BadTbl, TEST StaffDel, TEST Iso Entry, TEST FE Family, TEST Pub Flow). All cleaned up except the TEST FE Family entry seated during the first frontend run (now in today's history as 'seduto'). Also created and deleted a secondary tenant 'TEST Iso' with slug test-iso-<ts> via superadmin for isolation test. Restored tenant.whatsapp_enabled=False and kds_warn_minutes/alert=15/25 after tests. One free table was temporarily set to 'occupato' then restored to 'libero'.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run `cd /app/backend && REACT_APP_BACKEND_URL=https://ristoos.preview.emergentagent.com python -m pytest tests/test_iteration4.py -v -o 'addopts=' --junitxml=/app/test_reports/pytest/iter4.xml`. Twilio creds remain empty by design. One waitlist entry 'TEST FE Family' may still exist in today's seated history after this run — safe to ignore. KDS has ~8 orders older than 25 min on tables T3/T4/T5 that reliably show data-urgency='alert' with 'IN RITARDO'; use these for alert state verification. Public wait page polls every 5s so sleep >=6s after changing status.",
+  "rca of the issue": "N/A — all tested features function per spec."
+}

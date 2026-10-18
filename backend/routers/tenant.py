@@ -301,7 +301,7 @@ async def resend_notification(res_id: str, body: NotifyIn, p: Principal = Depend
         raise HTTPException(status_code=400, detail="La prenotazione non ha email né telefono")
     ok = await notify_reservation(res_id, body.kind)
     if not ok:
-        raise HTTPException(status_code=502, detail="Nessun canale attivo o invio non riuscito (serve email, oppure WhatsApp attivo e telefono)")
+        raise HTTPException(status_code=409, detail="Nessun canale attivo o invio non riuscito (serve email, oppure WhatsApp attivo e telefono)")
     return ser(await db.reservations.find_one({"_id": res_id}))
 
 

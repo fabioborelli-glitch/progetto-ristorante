@@ -44,19 +44,26 @@ Scelte utente (giugno 2026): MVP = **Prenotazioni + piantina sala** e **Menu dig
 - **Stampa scontrini**: stampa di sistema 80mm (HTML print) e Bluetooth ESC/POS via Web Bluetooth (Chrome) con generatore ESC/POS client-side, stampa di prova, auto-stampa alla chiusura conto (impostazione per dispositivo). Il backend è in cloud: nessuna stampa diretta LAN (limite noto).
 - **Reparti cucina**: reparti per tenant (default Cucina/Pizzeria/Bar, editor in Impostazioni), assegnazione per categoria o per piatto, righe ordine con `station_id`, stato per reparto (`order.stations`) con derivazione stato ordine, KDS filtrabile per postazione (persistente sul tablet) con bump per reparto.
 
+## Implementato (18/06/2026) — iterazione 4
+- **WhatsApp (predisposto, disattivo)**: servizio Twilio in `services/whatsapp.py`, variabili `TWILIO_ACCOUNT_SID/AUTH_TOKEN/WHATSAPP_FROM` (vuote), flag per tenant `whatsapp_enabled` in Impostazioni con stato "non ancora attivo". Conferma/promemoria partono anche su WhatsApp quando configurato. Il cron promemoria considera anche prenotazioni con solo telefono.
+- **Tempi di preparazione KDS**: soglie per tenant `kds_warn_minutes` (15) e `kds_alert_minutes` (25) in Impostazioni; ticket con anello giallo "ATTENZIONE" e rosso pulsante "IN RITARDO".
+- **Lista d'attesa** `/attesa`: coda con posizione, chiama / accomoda (assegna tavolo → occupato) / no show / annulla, storico giornata, QR + codice per il cliente; pagina pubblica `/r/{slug}/attesa/{code}` con polling che mostra quanti gruppi prima e "Il tuo tavolo è pronto!" (vibrazione). Nessun messaggio inviato (scelta utente). Eventi WS `waitlist_changed`.
+- Stripe pagamento al tavolo: rimandato su scelta utente.
+
 ## Backlog prioritario
 ### P0 (prossimo)
-- Pagamenti Stripe (acconto prenotazione, paga al tavolo via QR sul conto)
+- Pagamenti Stripe al tavolo (QR sullo scontrino) — rimandato
+- Attivare WhatsApp inserendo le credenziali Twilio
 ### P1
-- Notifiche WhatsApp (Twilio), menu multilingua completo, eliminazione tenant, audit log
+- Menu multilingua completo, eliminazione tenant, audit log
 - Integrazione RT fiscale (Epson/Custom) per corrispettivi
-- Promemoria "3 ore prima" come opzione per tenant
+- Promemoria "3 ore prima" come opzione per tenant; avviso waitlist via WhatsApp/SMS
 ### P2 (Fase 2/3 del piano)
 - Magazzino + food cost, staff e turni, RBAC granulare, consolidato multi-locale
 - Fatturazione elettronica SDI (Acube)
 - App nativa camerieri, CRM/fidelity, AI suggerimenti menu
 
 ## Test
-- Report: /app/test_reports/iteration_1.json … iteration_3.json
+- Report: /app/test_reports/iteration_1.json … iteration_4.json
 - Suite: `cd /app/backend && python -m pytest tests/ -q` (test email possono dare 503 per rate-limit del proxy)
 - Credenziali: /app/memory/test_credentials.md
