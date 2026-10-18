@@ -5,6 +5,7 @@ from core import db, new_id, now_iso, ser
 from services.ws import hub
 from services.notify import notify_reservation
 from services.stations import build_order_lines
+from services.inventory import deplete_for_order
 
 router = APIRouter(prefix="/public", tags=["public"])
 
@@ -129,6 +130,7 @@ async def place_order(slug: str, body: PublicOrder):
            "total": round(total, 2), "status": "nuovo", "source": "qr", "bill_id": None,
            "created_at": now_iso(), "updated_at": now_iso()}
     await db.orders.insert_one(doc)
+    await deplete_for_order(t["_id"], lines, doc["_id"])
     await db.tables.update_one({"_id": table["_id"]}, {"$set": {"status": "occupato"}})
     await hub.emit(t["_id"], "orders_changed", {"order_id": doc["_id"], "table_name": table["name"]})
     await hub.emit(t["_id"], "tables_changed")

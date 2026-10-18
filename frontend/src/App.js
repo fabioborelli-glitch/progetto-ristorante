@@ -19,6 +19,7 @@ import AcceptInvite from "@/pages/guest/AcceptInvite";
 import WaitStatus from "@/pages/guest/WaitStatus";
 import Pos from "@/pages/Pos";
 import Waitlist from "@/pages/Waitlist";
+import Inventory from "@/pages/Inventory";
 
 function Loading() {
   return (
@@ -68,6 +69,7 @@ function App() {
           <Route path="/sala" element={<Protected><TenantRoute><FloorPlan /></TenantRoute></Protected>} />
           <Route path="/prenotazioni" element={<Protected><TenantRoute><Reservations /></TenantRoute></Protected>} />
           <Route path="/menu" element={<Protected><TenantRoute><MenuManager /></TenantRoute></Protected>} />
+          <Route path="/magazzino" element={<Protected><TenantRoute><Inventory /></TenantRoute></Protected>} />
           <Route path="/qr" element={<Protected><TenantRoute><QrTables /></TenantRoute></Protected>} />
           <Route path="/impostazioni" element={<Protected><TenantRoute><Settings /></TenantRoute></Protected>} />
           <Route path="/kds" element={<Protected><Kds /></Protected>} />

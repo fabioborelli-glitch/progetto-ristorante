@@ -10,6 +10,7 @@ from services.ws import hub
 from services.notify import notify_reservation
 from services import whatsapp
 from services.stations import resolve_station, derive_order_status, DEFAULT_STATIONS, build_order_lines
+from services.inventory import deplete_for_order
 
 router = APIRouter(prefix="/t", tags=["tenant"])
 
@@ -472,6 +473,7 @@ async def create_waiter_order(body: WaiterOrderIn, p: Principal = Depends(requir
            "client_id": body.client_id, "bill_id": bill["_id"] if bill else None,
            "created_at": now_iso(), "updated_at": now_iso()}
     await db.orders.insert_one(doc)
+    await deplete_for_order(p.tenant_id, lines, doc["_id"])
     if bill:
         bl = [{"key": f"{doc['_id']}:{i}", "order_id": doc["_id"], "item_id": it["item_id"], "name": it["name"],
                "variant": it.get("variant"), "qty": it["qty"], "price": it["price"], "station_id": it.get("station_id")}

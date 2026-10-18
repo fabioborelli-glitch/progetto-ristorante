@@ -26,6 +26,10 @@ export default function MenuManager() {
   const [form, setForm] = useState(EMPTY_ITEM);
   const [editing, setEditing] = useState(null);
   const [catForm, setCatForm] = useState({ id: null, name: "", name_en: "", station_id: null });
+  const [ingredients, setIngredients] = useState([]);
+  const [recipe, setRecipe] = useState([]);
+  const [foodCost, setFoodCost] = useState(null);
+  const [ingPick, setIngPick] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -38,9 +42,29 @@ export default function MenuManager() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { api.get("/t/ingredients").then((r) => setIngredients(r.data)).catch(() => {}); }, []);
 
-  const openNewItem = () => { setEditing(null); setForm({ ...EMPTY_ITEM, category_id: activeCat !== "all" ? activeCat : cats[0]?.id || "" }); setItemOpen(true); };
-  const openEditItem = (it) => { setEditing(it); setForm({ ...it, price: it.price }); setItemOpen(true); };
+  const loadRecipe = async (itemId) => {
+    try {
+      const [r, fc] = await Promise.all([api.get(`/t/menu/items/${itemId}/recipe`), api.get(`/t/menu/items/${itemId}/food-cost`)]);
+      setRecipe(r.data.lines || []); setFoodCost(fc.data);
+    } catch { setRecipe([]); setFoodCost(null); }
+  };
+
+  const openNewItem = () => { setEditing(null); setRecipe([]); setFoodCost(null); setForm({ ...EMPTY_ITEM, category_id: activeCat !== "all" ? activeCat : cats[0]?.id || "" }); setItemOpen(true); };
+  const openEditItem = (it) => { setEditing(it); setForm({ ...it, price: it.price }); setRecipe([]); setFoodCost(null); loadRecipe(it.id); setItemOpen(true); };
+
+  const addIngredient = (id) => {
+    if (!id || recipe.some((l) => l.ingredient_id === id)) return;
+    setRecipe([...recipe, { ingredient_id: id, qty: 1 }]); setIngPick("");
+  };
+  const saveRecipe = async () => {
+    if (!editing) return;
+    try {
+      await api.put(`/t/menu/items/${editing.id}/recipe`, { lines: recipe.filter((l) => l.qty > 0).map((l) => ({ ingredient_id: l.ingredient_id, qty: parseFloat(l.qty) })) });
+      toast.success("Ricetta salvata"); loadRecipe(editing.id);
+    } catch (err) { toast.error(errMsg(err)); }
+  };
 
   const saveItem = async (e) => {
     e.preventDefault();
@@ -200,6 +224,43 @@ export default function MenuManager() {
             <label className="flex items-center gap-2 text-sm"><Switch checked={form.available} onCheckedChange={(v) => setForm({ ...form, available: v })} data-testid="item-available-switch" />Disponibile</label>
             <Button type="submit" className="w-full h-12 bg-[#E03131] hover:bg-[#c42727]" data-testid="item-submit-btn">{editing ? "Salva" : "Crea piatto"}</Button>
           </form>
+
+          {editing && (
+            <div className="mt-6 pt-6 border-t border-gray-200 space-y-3" data-testid="recipe-section">
+              <div className="flex items-center justify-between">
+                <Label className="text-base">Ricetta (scarico magazzino)</Label>
+                {foodCost && foodCost.cost > 0 && (
+                  <span className="text-xs font-medium text-gray-600" data-testid="food-cost-badge">
+                    Food cost {fmtEur(foodCost.cost)}{foodCost.food_cost_pct != null ? ` · ${foodCost.food_cost_pct}%` : ""}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-gray-500">Collega gli ingredienti: ad ogni vendita verranno scaricati dal magazzino.</p>
+              {ingredients.length === 0 ? (
+                <div className="text-xs text-gray-400">Aggiungi prima gli ingredienti nella sezione Magazzino.</div>
+              ) : (
+                <Select value={ingPick} onValueChange={addIngredient}>
+                  <SelectTrigger className="h-11" data-testid="recipe-add-select"><SelectValue placeholder="Aggiungi ingrediente" /></SelectTrigger>
+                  <SelectContent>{ingredients.map((i) => <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>)}</SelectContent>
+                </Select>
+              )}
+              <div className="space-y-2" data-testid="recipe-lines">
+                {recipe.map((l, idx) => {
+                  const ing = ingredients.find((i) => i.id === l.ingredient_id);
+                  return (
+                    <div key={l.ingredient_id} className="flex items-center gap-2">
+                      <div className="flex-1 text-sm truncate">{ing?.name || "—"}</div>
+                      <Input className="h-10 w-24" type="number" step="0.001" value={l.qty} onChange={(e) => setRecipe(recipe.map((x, j) => j === idx ? { ...x, qty: e.target.value } : x))} data-testid={`recipe-qty-${idx}`} />
+                      <span className="text-xs text-gray-400 w-8">{ing?.unit}</span>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => setRecipe(recipe.filter((_, j) => j !== idx))}><X size={14} /></Button>
+                    </div>
+                  );
+                })}
+                {recipe.length === 0 && <div className="text-xs text-gray-400">Nessun ingrediente collegato.</div>}
+              </div>
+              <Button type="button" variant="outline" className="w-full h-11" onClick={saveRecipe} data-testid="recipe-save-btn">Salva ricetta</Button>
+            </div>
+          )}
         </SheetContent>
       </Sheet>
 
