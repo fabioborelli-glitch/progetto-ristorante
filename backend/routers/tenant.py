@@ -8,6 +8,7 @@ from core import (db, new_id, now_iso, ser, tq, get_scoped_or_404, require_tenan
                   hash_password, TENANT_ROLES, ROLE_RANK)
 from services.ws import hub
 from services.notify import notify_reservation
+from services import whatsapp
 from services.stations import resolve_station, derive_order_status, DEFAULT_STATIONS
 
 router = APIRouter(prefix="/t", tags=["tenant"])
@@ -35,6 +36,9 @@ class TenantSettings(BaseModel):
     logo_url: Optional[str] = None
     stations: Optional[List[dict]] = None
     notify_reply_to: Optional[str] = None
+    whatsapp_enabled: Optional[bool] = None
+    kds_warn_minutes: Optional[int] = None
+    kds_alert_minutes: Optional[int] = None
 
 
 class StationIn(BaseModel):
@@ -45,7 +49,9 @@ class StationIn(BaseModel):
 
 @router.get("/settings")
 async def get_settings(p: Principal = Depends(require_tenant("staff"))):
-    return ser(await db.tenants.find_one({"_id": p.tenant_id}))
+    out = ser(await db.tenants.find_one({"_id": p.tenant_id}))
+    out["whatsapp_available"] = whatsapp.configured()
+    return out
 
 
 @router.patch("/settings")
@@ -260,7 +266,7 @@ async def create_reservation(body: ReservationIn, background: BackgroundTasks, p
     doc = {"_id": new_id(), "tenant_id": p.tenant_id, **body.model_dump(), "source": "manuale", "notify": {},
            "created_at": now_iso()}
     await db.reservations.insert_one(doc)
-    if body.status == "confermata" and body.email:
+    if body.status == "confermata" and (body.email or body.phone):
         background.add_task(notify_reservation, doc["_id"], "conferma")
     return ser(doc)
 
@@ -277,7 +283,7 @@ async def update_reservation(res_id: str, body: ReservationUpdate, background: B
             await db.tables.update_one(tq(p, {"_id": tid}), {"$set": {"status": "occupato"}})
             await hub.emit(p.tenant_id, "tables_changed")
     res = await db.reservations.find_one_and_update(tq(p, {"_id": res_id}), {"$set": upd}, return_document=True)
-    if upd.get("status") == "confermata" and current.get("status") != "confermata" and res.get("email"):
+    if upd.get("status") == "confermata" and current.get("status") != "confermata" and (res.get("email") or res.get("phone")):
         background.add_task(notify_reservation, res_id, "conferma")
     return ser(res)
 
@@ -291,11 +297,11 @@ async def resend_notification(res_id: str, body: NotifyIn, p: Principal = Depend
     res = await get_scoped_or_404(p, "reservations", res_id)
     if body.kind not in ("conferma", "promemoria", "ricevuta"):
         raise HTTPException(status_code=400, detail="Tipo non valido")
-    if not res.get("email"):
-        raise HTTPException(status_code=400, detail="La prenotazione non ha un indirizzo email")
+    if not res.get("email") and not res.get("phone"):
+        raise HTTPException(status_code=400, detail="La prenotazione non ha email né telefono")
     ok = await notify_reservation(res_id, body.kind)
     if not ok:
-        raise HTTPException(status_code=502, detail="Invio email non riuscito, riprova tra poco")
+        raise HTTPException(status_code=502, detail="Nessun canale attivo o invio non riuscito (serve email, oppure WhatsApp attivo e telefono)")
     return ser(await db.reservations.find_one({"_id": res_id}))
 
 

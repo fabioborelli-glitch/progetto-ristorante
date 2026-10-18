@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from html import escape
 from core import db, now_iso
 from services.email import send_email
+from services import whatsapp
 
 logger = logging.getLogger("ristoos.notify")
 
@@ -58,27 +59,45 @@ TEMPLATES = {
 }
 
 
+WA_TEXT = {
+    "ricevuta": lambda t, r: f"Ciao {r['name']}, {t['name']} ha ricevuto la tua richiesta di prenotazione per {r['guests']} persone {fmt_date(r['date'])} alle {r['time']}. Ti confermeremo al più presto.",
+    "conferma": lambda t, r: f"Ciao {r['name']}, la tua prenotazione da {t['name']} è confermata: {fmt_date(r['date'])} alle {r['time']}, {r['guests']} persone. Ti aspettiamo!",
+    "promemoria": lambda t, r: f"Ciao {r['name']}, ti ricordiamo la prenotazione di oggi da {t['name']} alle {r['time']} per {r['guests']} persone. Se non puoi venire, avvisaci. A dopo!",
+}
+
+
 async def notify_reservation(reservation_id: str, kind: str) -> bool:
     res = await db.reservations.find_one({"_id": reservation_id})
-    if not res or not res.get("email"):
+    if not res:
         return False
     tenant = await db.tenants.find_one({"_id": res["tenant_id"]})
     if not tenant:
         return False
-    subject, html = TEMPLATES[kind](tenant, res)
-    try:
-        await send_email(to=res["email"], subject=subject, html=html, reply_to=tenant.get("notify_reply_to") or None)
-    except Exception as e:
-        logger.warning(f"Reservation email {kind} failed for {reservation_id}: {e}")
-        await db.reservations.update_one({"_id": reservation_id}, {"$set": {f"notify.{kind}_error": str(e)[:200]}})
-        return False
-    await db.reservations.update_one({"_id": reservation_id}, {"$set": {f"notify.{kind}": now_iso()}, "$unset": {f"notify.{kind}_error": ""}})
-    return True
+    ok = False
+    if res.get("email"):
+        subject, html = TEMPLATES[kind](tenant, res)
+        try:
+            await send_email(to=res["email"], subject=subject, html=html, reply_to=tenant.get("notify_reply_to") or None)
+            await db.reservations.update_one({"_id": reservation_id}, {"$set": {f"notify.{kind}": now_iso()}, "$unset": {f"notify.{kind}_error": ""}})
+            ok = True
+        except Exception as e:
+            logger.warning(f"Reservation email {kind} failed for {reservation_id}: {e}")
+            await db.reservations.update_one({"_id": reservation_id}, {"$set": {f"notify.{kind}_error": str(e)[:200]}})
+    if tenant.get("whatsapp_enabled") and whatsapp.configured() and res.get("phone"):
+        try:
+            sid = await whatsapp.send_whatsapp(res["phone"], WA_TEXT[kind](tenant, res))
+            if sid:
+                await db.reservations.update_one({"_id": reservation_id}, {"$set": {f"notify.{kind}_wa": now_iso()}})
+                ok = True
+        except Exception as e:
+            await db.reservations.update_one({"_id": reservation_id}, {"$set": {f"notify.{kind}_wa_error": str(e)[:200]}})
+    return ok
 
 
 async def send_daily_reminders(run_id: str):
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    q = {"date": today, "status": "confermata", "email": {"$nin": ["", None]}, "notify.promemoria": {"$exists": False}}
+    q = {"date": today, "status": "confermata", "notify.promemoria": {"$exists": False}, "notify.promemoria_wa": {"$exists": False},
+         "$or": [{"email": {"$nin": ["", None]}}, {"phone": {"$nin": ["", None]}}]}
     sent = 0
     async for r in db.reservations.find(q):
         tenant = await db.tenants.find_one({"_id": r["tenant_id"], "active": True})

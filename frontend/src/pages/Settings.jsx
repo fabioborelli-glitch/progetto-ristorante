@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const ROLE_LABEL = { owner: "Owner", manager: "Manager", staff: "Staff" };
@@ -40,8 +41,8 @@ export default function Settings() {
     e.preventDefault();
     const slots = slotsText.split(",").map((x) => x.trim()).filter(Boolean);
     try {
-      const { data } = await api.patch("/t/settings", { name: s.name, address: s.address, city: s.city, phone: s.phone, description: s.description, slots, capacity_per_slot: +s.capacity_per_slot, logo_url: s.logo_url || "" });
-      setS(data);
+      const { data } = await api.patch("/t/settings", { name: s.name, address: s.address, city: s.city, phone: s.phone, description: s.description, slots, capacity_per_slot: +s.capacity_per_slot, logo_url: s.logo_url || "", kds_warn_minutes: +s.kds_warn_minutes || 15, kds_alert_minutes: +s.kds_alert_minutes || 25, whatsapp_enabled: !!s.whatsapp_enabled });
+      setS({ ...data, whatsapp_available: s.whatsapp_available });
       toast.success("Impostazioni salvate");
       if (!isSuper) refresh();
     } catch (err) {
@@ -107,6 +108,21 @@ export default function Settings() {
           <div className="space-y-1"><Label>Coperti max per fascia</Label><Input className="h-11" type="number" min={1} value={s.capacity_per_slot} onChange={f("capacity_per_slot")} disabled={!canEdit} data-testid="settings-capacity" /></div>
         </div>
         <div className="text-xs text-gray-500">Slug pubblico: <code className="bg-gray-100 px-1.5 py-0.5 rounded">/r/{s.slug}</code></div>
+        <h2 className="font-display text-lg font-bold pt-2">Notifiche al cliente</h2>
+        <div className="rounded-lg border border-gray-200 p-4 flex flex-wrap items-center gap-4" data-testid="whatsapp-section">
+          <div className="flex-1 min-w-[220px]">
+            <div className="font-medium">WhatsApp (Twilio)</div>
+            <div className="text-xs text-gray-500" data-testid="whatsapp-status">
+              {s.whatsapp_available ? "Credenziali Twilio configurate: conferme e promemoria partono anche su WhatsApp al numero del cliente." : "Non ancora attivo: inserisci TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN e TWILIO_WHATSAPP_FROM nelle variabili d'ambiente del backend per abilitarlo. Le email funzionano comunque."}
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-sm"><Switch checked={!!s.whatsapp_enabled} disabled={!canEdit} onCheckedChange={(v) => setS({ ...s, whatsapp_enabled: v })} data-testid="whatsapp-switch" />{s.whatsapp_enabled ? "Attivo per questo locale" : "Disattivato"}</label>
+        </div>
+        <h2 className="font-display text-lg font-bold pt-2">Tempi cucina (KDS)</h2>
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="space-y-1"><Label>Avviso giallo dopo (minuti)</Label><Input className="h-11" type="number" min={1} value={s.kds_warn_minutes ?? 15} onChange={f("kds_warn_minutes")} disabled={!canEdit} data-testid="settings-kds-warn" /></div>
+          <div className="space-y-1"><Label>Allarme rosso dopo (minuti)</Label><Input className="h-11" type="number" min={1} value={s.kds_alert_minutes ?? 25} onChange={f("kds_alert_minutes")} disabled={!canEdit} data-testid="settings-kds-alert" /></div>
+        </div>
         {canEdit && <Button type="submit" className="h-12 px-6 bg-[#E03131] hover:bg-[#c42727]" data-testid="settings-save-btn">Salva impostazioni</Button>}
       </form>
 

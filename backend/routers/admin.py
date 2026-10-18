@@ -34,7 +34,8 @@ def slugify(s: str) -> str:
 def tenant_doc(name: str, slug: str, city: str = "") -> dict:
     return {"_id": new_id(), "name": name, "slug": slug, "city": city, "address": "", "phone": "",
             "description": "", "logo_url": "", "active": True, "slots": DEFAULT_SLOTS, "capacity_per_slot": 40,
-            "stations": [dict(s) for s in DEFAULT_STATIONS],
+            "stations": [dict(s) for s in DEFAULT_STATIONS], "kds_warn_minutes": 15, "kds_alert_minutes": 25,
+            "whatsapp_enabled": False,
             "currency": "EUR", "created_at": now_iso()}
 
 

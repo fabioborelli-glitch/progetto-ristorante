@@ -13,6 +13,10 @@ function elapsed(iso) {
   return m < 1 ? "adesso" : `${m} min`;
 }
 
+function minutesSince(iso) {
+  return Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+}
+
 export default function Kds() {
   const { tenant, user } = useAuth();
   const [orders, setOrders] = useState([]);
@@ -24,6 +28,13 @@ export default function Kds() {
   const first = useRef(true);
   const stations = tenant?.stations || [];
   const stationById = Object.fromEntries(stations.map((s) => [s.id, s]));
+  const warnMin = tenant?.kds_warn_minutes ?? 15;
+  const alertMin = tenant?.kds_alert_minutes ?? 25;
+  const urgency = (o) => {
+    if (o.effStatus === "pronto") return "none";
+    const m = minutesSince(o.created_at);
+    return m >= alertMin ? "alert" : m >= warnMin ? "warn" : "none";
+  };
 
   const pickStation = (id) => { setStation(id); localStorage.setItem("ristoos_kds_station", id); };
 
@@ -122,8 +133,10 @@ export default function Kds() {
             {visible.map((o, i) => {
               const st = ORDER_STATUS[o.effStatus];
               const [, label] = NEXT[o.effStatus] || [];
+              const urg = urgency(o);
               return (
-                <article key={o.id} style={{ animationDelay: `${i * 40}ms` }} className={`fade-up bg-[#171717] rounded-xl border-t-4 ${st.color} ${o.effStatus === "nuovo" ? "pulse-new" : ""} flex flex-col`} data-testid={`kds-ticket-${o.id}`}>
+                <article key={o.id} style={{ animationDelay: `${i * 40}ms` }} data-urgency={urg}
+                  className={`fade-up rounded-xl border-t-4 ${st.color} ${o.effStatus === "nuovo" && urg === "none" ? "pulse-new" : ""} ${urg === "alert" ? "bg-[#2a0f0f] ring-2 ring-red-500 kds-alert" : urg === "warn" ? "bg-[#231a0a] ring-2 ring-amber-500" : "bg-[#171717]"} flex flex-col`} data-testid={`kds-ticket-${o.id}`}>
                   <div className="px-5 pt-4 pb-3 flex items-start justify-between border-b border-[#262626]">
                     <div>
                       <div className="font-display text-3xl font-extrabold leading-none kds-ticket-number">Tav. {o.table_name}</div>
@@ -131,7 +144,9 @@ export default function Kds() {
                     </div>
                     <div className="text-right">
                       <span className={`inline-block text-[11px] font-bold uppercase tracking-wide text-white px-2 py-1 rounded ${st.badge}`} data-testid={`kds-ticket-status-${o.id}`}>{st.label}</span>
-                      <div className="text-sm text-gray-300 mt-1.5 tabular-nums" data-testid={`kds-elapsed-${o.id}`}>{elapsed(o.created_at)}</div>
+                      <div className={`text-sm mt-1.5 tabular-nums font-bold ${urg === "alert" ? "text-red-400" : urg === "warn" ? "text-amber-400" : "text-gray-300"}`} data-testid={`kds-elapsed-${o.id}`}>
+                        {urg !== "none" && <span className="mr-1" data-testid={`kds-urgency-${o.id}`}>{urg === "alert" ? "IN RITARDO" : "ATTENZIONE"} ·</span>}{elapsed(o.created_at)}
+                      </div>
                     </div>
                   </div>
                   <ul className="px-5 py-4 space-y-2.5 flex-1">

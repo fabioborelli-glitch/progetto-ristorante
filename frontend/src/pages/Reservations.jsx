@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Plus, ChevronLeft, ChevronRight, Phone, Users, Link as LinkIcon, Mail, MailCheck, Bell } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, Phone, Users, Link as LinkIcon, Mail, MailCheck, Bell, Hourglass } from "lucide-react";
 import { api, errMsg, todayStr, RES_STATUS } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useTenantSocket } from "@/hooks/useTenantSocket";
@@ -21,6 +22,7 @@ function shiftDate(d, n) {
 
 export default function Reservations() {
   const { tenant } = useAuth();
+  const navigate = useNavigate();
   const [date, setDate] = useState(todayStr());
   const [list, setList] = useState([]);
   const [tables, setTables] = useState([]);
@@ -91,7 +93,10 @@ export default function Reservations() {
             <LinkIcon size={14} /> Link pubblico: <span className="underline">{publicUrl}</span>
           </button>
         </div>
-        <Button className="h-12 px-6 bg-[#E03131] hover:bg-[#c42727]" onClick={openNew} data-testid="new-reservation-btn"><Plus size={18} className="mr-2" />Nuova prenotazione</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" className="h-12" onClick={() => navigate("/attesa")} data-testid="go-waitlist-btn"><Hourglass size={16} className="mr-2" />Lista d'attesa</Button>
+          <Button className="h-12 px-6 bg-[#E03131] hover:bg-[#c42727]" onClick={openNew} data-testid="new-reservation-btn"><Plus size={18} className="mr-2" />Nuova prenotazione</Button>
+        </div>
       </div>
 
       <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-xl p-3">
@@ -175,20 +180,23 @@ export default function Reservations() {
             </div>
             <div className="space-y-1"><Label>Note</Label><Textarea value={form.notes || ""} onChange={f("notes")} data-testid="res-notes-input" /></div>
             <Button type="submit" className="w-full h-12 bg-[#E03131] hover:bg-[#c42727]" data-testid="res-submit-btn">{editing ? "Salva" : "Crea prenotazione"}</Button>
-            {editing && editing.email && (
+            {editing && (editing.email || editing.phone) && (
               <div className="border-t border-gray-200 pt-4 space-y-2" data-testid="res-notify-section">
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Email al cliente</div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Notifiche al cliente</div>
                 <div className="text-xs text-gray-500">
-                  {editing.notify?.ricevuta && <div>Ricevuta: {new Date(editing.notify.ricevuta).toLocaleString("it-IT")}</div>}
-                  {editing.notify?.conferma && <div>Conferma: {new Date(editing.notify.conferma).toLocaleString("it-IT")}</div>}
-                  {editing.notify?.promemoria && <div>Promemoria: {new Date(editing.notify.promemoria).toLocaleString("it-IT")}</div>}
-                  {!editing.notify?.ricevuta && !editing.notify?.conferma && !editing.notify?.promemoria && <div>Nessuna email inviata finora.</div>}
+                  {editing.notify?.ricevuta && <div>Ricevuta (email): {new Date(editing.notify.ricevuta).toLocaleString("it-IT")}</div>}
+                  {editing.notify?.conferma && <div>Conferma (email): {new Date(editing.notify.conferma).toLocaleString("it-IT")}</div>}
+                  {editing.notify?.promemoria && <div>Promemoria (email): {new Date(editing.notify.promemoria).toLocaleString("it-IT")}</div>}
+                  {editing.notify?.conferma_wa && <div>Conferma (WhatsApp): {new Date(editing.notify.conferma_wa).toLocaleString("it-IT")}</div>}
+                  {editing.notify?.promemoria_wa && <div>Promemoria (WhatsApp): {new Date(editing.notify.promemoria_wa).toLocaleString("it-IT")}</div>}
+                  {!editing.notify || Object.keys(editing.notify).filter((k) => !k.endsWith("_error")).length === 0 ? <div>Nessuna notifica inviata finora.</div> : null}
+                  {!editing.email && <div className="text-amber-700">Solo telefono: serve WhatsApp attivo (Impostazioni) per inviare.</div>}
                 </div>
                 <div className="flex gap-2">
                   <Button type="button" variant="outline" className="h-10 flex-1" disabled={sending} onClick={() => resend("conferma")} data-testid="res-send-conferma-btn"><MailCheck size={14} className="mr-1" />{editing.notify?.conferma ? "Reinvia conferma" : "Invia conferma"}</Button>
                   <Button type="button" variant="outline" className="h-10 flex-1" disabled={sending} onClick={() => resend("promemoria")} data-testid="res-send-promemoria-btn"><Bell size={14} className="mr-1" />Invia promemoria</Button>
                 </div>
-                <p className="text-[11px] text-gray-400">Il promemoria parte automaticamente alle 10:00 del giorno della prenotazione per le prenotazioni confermate.</p>
+                <p className="text-[11px] text-gray-400">Il promemoria parte automaticamente alle 10:00 del giorno della prenotazione (email e, se attivo, WhatsApp).</p>
               </div>
             )}
           </form>

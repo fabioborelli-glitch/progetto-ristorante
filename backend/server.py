@@ -10,7 +10,7 @@ from fastapi import FastAPI, APIRouter, WebSocket, WebSocketDisconnect
 from starlette.middleware.cors import CORSMiddleware
 
 from core import db, client, new_id, now_iso, hash_password, verify_password, JWT_ALGORITHM
-from routers import auth, admin, tenant, public, invites, files, bills, cron
+from routers import auth, admin, tenant, public, invites, files, bills, cron, waitlist
 from routers.admin import tenant_doc
 from services.ws import hub
 from services.storage import init_storage
@@ -35,6 +35,7 @@ api.include_router(bills.router)
 api.include_router(invites.router)
 api.include_router(files.router)
 api.include_router(cron.router)
+api.include_router(waitlist.router)
 api.include_router(public.router)
 app.include_router(api)
 
@@ -158,6 +159,8 @@ async def startup():
     await db.bills.create_index([("tenant_id", 1), ("status", 1)])
     await db.files.create_index("tenant_id")
     await db.tenants.update_many({"stations": {"$exists": False}}, {"$set": {"stations": DEFAULT_STATIONS}})
+    await db.tenants.update_many({"kds_warn_minutes": {"$exists": False}}, {"$set": {"kds_warn_minutes": 15, "kds_alert_minutes": 25, "whatsapp_enabled": False}})
+    await db.waitlist.create_index([("tenant_id", 1), ("date", 1)])
     await db.categories.update_many({"name": {"$in": ["Pizze", "Pizza", "Pizzeria"]}, "station_id": {"$exists": False}}, {"$set": {"station_id": "pizzeria"}})
     await db.categories.update_many({"name": {"$in": ["Bevande", "Bar", "Vini", "Caffetteria"]}, "station_id": {"$exists": False}}, {"$set": {"station_id": "bar"}})
     await db.menu_items.update_many({"name": {"$regex": "^Pizza", "$options": "i"}, "station_id": {"$exists": False}}, {"$set": {"station_id": "pizzeria"}})
