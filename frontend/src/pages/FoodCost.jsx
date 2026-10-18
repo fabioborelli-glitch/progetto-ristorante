@@ -5,18 +5,23 @@ import { api, errMsg, fmtEur } from "@/lib/api";
 
 export default function FoodCost() {
   const [data, setData] = useState(null);
+  const [err, setErr] = useState(false);
   const [sort, setSort] = useState("pct");
 
   useEffect(() => {
-    api.get("/t/food-cost").then((r) => setData(r.data)).catch((e) => toast.error(errMsg(e)));
+    api.get("/t/food-cost").then((r) => setData(r.data)).catch((e) => { setErr(true); toast.error(errMsg(e)); });
   }, []);
 
+  if (err) return <div className="text-gray-500 py-10" data-testid="foodcost-error">Impossibile caricare il food cost. Riprova.</div>;
   if (!data) return <div className="text-gray-500 py-10" data-testid="foodcost-loading">Caricamento…</div>;
 
   const pctColor = (p) => p == null ? "text-gray-400" : p <= 30 ? "text-emerald-600" : p <= 40 ? "text-amber-600" : "text-red-600";
   const items = [...data.items].sort((a, b) => {
     if (sort === "pct") return (b.food_cost_pct ?? -1) - (a.food_cost_pct ?? -1);
-    if (sort === "margin") return (b.margin ?? -999) - (a.margin ?? -999);
+    if (sort === "margin") {
+      if (a.has_recipe !== b.has_recipe) return a.has_recipe ? -1 : 1;
+      return (b.margin ?? -999) - (a.margin ?? -999);
+    }
     return a.name.localeCompare(b.name);
   });
 

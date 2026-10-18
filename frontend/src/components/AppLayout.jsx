@@ -20,8 +20,9 @@ const NAV = [
 ];
 
 export function AppLayout({ children }) {
-  const { user, logout, isSuper, tenant, setActAs } = useAuth();
+  const { user, logout, isSuper, tenant, setActAs, role } = useAuth();
   const navigate = useNavigate();
+  const nav = NAV.filter((n) => n.to !== "/food-cost" || role === "owner" || role === "manager");
 
   useEffect(() => {
     const prefetch = () => { ["/t/menu/items", "/t/menu/categories", "/t/tables", "/t/orders", "/t/bills"].forEach((u) => api.get(u).catch(() => {})); };
@@ -42,7 +43,7 @@ export function AppLayout({ children }) {
           <div className="mt-2 text-sm text-gray-500 truncate" data-testid="sidebar-tenant-name">{tenant?.name}</div>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">
-          {NAV.map((n) => (
+          {nav.map((n) => (
             <NavLink
               key={n.to}
               to={n.to}
@@ -96,7 +97,7 @@ export function AppLayout({ children }) {
         </header>
         <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8">{children}</main>
         <nav className="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-gray-200 grid grid-cols-10 overflow-x-auto" data-testid="mobile-nav">
-          {NAV.map((n) => (
+          {nav.map((n) => (
             <NavLink
               key={n.to}
               to={n.to}

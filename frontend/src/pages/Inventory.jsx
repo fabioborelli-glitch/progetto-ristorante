@@ -272,7 +272,7 @@ export default function Inventory() {
       <SuppliersSheet open={suppOpen} onOpenChange={setSuppOpen} suppliers={suppliers} reload={async () => setSuppliers((await api.get("/t/suppliers")).data)} canEdit={canEdit} />
       <ReceiveSheet open={recvOpen} onOpenChange={setRecvOpen} recv={recv} setRecv={setRecv} suppliers={suppliers} ingredients={list} submit={submitReceive} />
       <CountSheet open={countOpen} onOpenChange={setCountOpen} onDone={refresh} />
-      <InvoiceSheet open={invOpen} onOpenChange={setInvOpen} ingredients={list} cats={cats} onDone={() => { refresh(); loadMeta(); }} />
+      <InvoiceSheet open={invOpen} onOpenChange={setInvOpen} cats={cats} onDone={() => { refresh(); loadMeta(); }} />
     </div>
   );
 }
@@ -419,10 +419,15 @@ function CountSheet({ open, onOpenChange, onDone }) {
   );
 }
 
-function InvoiceSheet({ open, onOpenChange, ingredients, cats, onDone }) {
+function InvoiceSheet({ open, onOpenChange, cats, onDone }) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [supplier, setSupplier] = useState("");
+  const [ingredients, setIngredients] = useState([]);
+
+  useEffect(() => {
+    if (open) api.get("/t/ingredients").then((r) => setIngredients(r.data)).catch(() => {});
+  }, [open]);
 
   const onFile = async (e) => {
     const file = e.target.files?.[0];

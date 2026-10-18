@@ -86,3 +86,16 @@ TODO Fase 1 rimanenti:
 - IMPORT dati reali: 770 ingredienti + fornitori + ~140 piatti da BaliFlow → RistoOS prod (da fare dopo redeploy).
 - Redeploy produzione con il nuovo codice prima dell'import.
 Prossime fasi richieste dall'utente (replica BaliFlow completa): food cost page, fatture OCR, fornitori avanzati, conto economico, incassi, conversazioni IA WhatsApp, CRM/clienti, base conoscenza, analisi.
+
+## 2026-10-18 — Fase 1b: Ripristino scorte, Food Cost, Fatture OCR (implementato e testato, iteration_7)
+- Ripristino scorte: annullo ordine (PATCH /t/orders/{id}/status annullato) ristorna le giacenze scaricate dal venduto, idempotente (movimento 'reso' con order_id). services/inventory.restore_for_order.
+- Food Cost: GET /t/food-cost (bulk, require manager) + pagina /food-cost (costo/margine/FC% per piatto, riepilogo, ordinamento). nav-food-cost nascosto a staff.
+- Fatture OCR: POST /t/invoices/scan (UploadFile immagine) -> services/ocr.py (Gemini gemini-3-flash-preview via EMERGENT_LLM_KEY) estrae fornitore/data/righe con qty/unit/unit_cost e auto-match ingredienti; POST /t/invoices/apply aggiorna costi, crea nuovi ingredienti, carica giacenze, crea/collega fornitore. UI: sheet 'Scansiona fattura' in Magazzino. Regex fornitore con re.escape.
+- Verificato via curl: scan 4 righe + match Pomodoro; apply +10kg e costo 1.2, crea Mozzarella; restore 8.2->9.1 idempotente; special-char supplier 201.
+- Redeploy produzione avviato 2026-10-18 (job a103ac66) per portare live Magazzino + queste funzioni PRIMA dell'import dati.
+
+### IMPORT DATI REALI — PENDENTE (prossimo passo)
+- Target: tenant DEMO (trattoria-demo) in PRODUZIONE ristoos.emergent.host (scelta utente).
+- Da BaliFlow (app.baliflowagency.com, online@fuoricitta.eu): 770 ingredienti (20 categorie) + fornitori + ~140 piatti (18 categorie) con allergeni/prezzi. Senza foto.
+- Metodo da decidere: export CSV/Excel da BaliFlow (veloce/affidabile) oppure scraping browser via screenshot_tool (26 pagine inventario + pagine menu).
+- Prerequisito: deploy live con nuovi endpoint inventory.

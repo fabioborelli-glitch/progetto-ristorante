@@ -1,0 +1,47 @@
+{
+  "summary": "Iteration 7: tested Food Cost (/t/food-cost API + /food-cost UI), stock restore on order cancel (ripristino scorte), invoice OCR scan (real Gemini call, JPEG+PNG+blank+non-image) and apply (mixed existing/new/skipped lines, supplier create/reuse), staff permissions, tenant isolation, and the Magazzino 'Scansiona fattura' UI end-to-end. Backend 11/13 pass. Core flows all work: food-cost math/summary right, restore 8.2->9.1 exact + idempotent (re-cancel and nuovo->annullato again give a single 'reso'), served orders not restored, OCR reads supplier/date (2026-01-15)/doc no./qty/unit/unit_cost correctly in ~5-10s and auto-matches by substring, apply updates cost, creates the new ingredient with the right category/unit/cost, adds stock (carico) and creates/links the supplier (case-insensitive reuse). 2 backend failures: unescaped supplier regex returns 500, and staff can open food-cost. UI: full owner flow works (upload -> editable lines -> match -> apply -> list refreshes, Zucchine 1->7kg @2.40, Rucola created). 2 UI bugs: match dropdown is empty when a category filter is active, and margin sort is misleading.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/t/invoices/apply", "issue": "supplier_name goes into a Mongo $regex without re.escape. Names with regex characters ('[', '(', '+', '*', '.') cause a 500 (pymongo OperationFailure: missing terminating ]) or a wrong match/duplicate supplier ('Rossi (srl)' never matches itself; 'S.r.l.' dots match any character). OCR returns names like 'Ortofrutta Bianchi S.r.l.' as normal output, so this will happen.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "GET /api/t/food-cost", "issue": "Uses require_tenant() with no role, so staff get 200 and see the cost/margin of every dish. The review spec says food-cost needs at least manager. The frontend nav also shows Food Cost to staff. Use require_tenant('manager') and hide nav-food-cost for staff, or confirm this is intended."},
+      {"endpoint": "POST /api/t/invoices/apply", "issue": "For existing ingredients the line unit is ignored. A 'cf' invoice line mapped to a 'kg' ingredient adds the raw qty with no conversion or warning."},
+      {"endpoint": "POST /api/t/invoices/scan", "issue": "Auto-match is plain substring matching in both directions. Short ingredient names can cause false positives. No fuzzy or word-based match: 'TEST_Zucchine' did not match the OCR result 'Zucchine Romanesche'."},
+      {"endpoint": "GET /api/t/food-cost", "issue": "Items with a recipe but price 0 are counted under 'without_recipe' in the summary."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "InvoiceSheet (Inventory.jsx)", "issue": "InvoiceSheet gets ingredients={list}, which is the filtered/searched list. With a category filter on (e.g. 'Carne'), the auto-matched ingredient is not among the Select options, so the trigger shows blank and only 'Crea nuovo ingrediente' is listed. Reproduced. Fix: pass a separate unfiltered ingredient list.", "selector": "[data-testid^='invoice-match-']", "priority": "HIGH"},
+      {"component": "FoodCost.jsx sort-margin", "issue": "Backend returns margin=price for dishes with no recipe (cost 0), so 'Margine' sorting puts recipe-less dishes (Cotoletta 24€, Tagliata 22€...) above real ones even though their margin shows '—'. Put has_recipe=false rows last.", "selector": "[data-testid='sort-margin']", "priority": "MEDIUM"},
+      {"component": "InvoiceSheet", "issue": "Line name is not editable, so a new ingredient is created with the raw OCR name. The unit is a free-text Input instead of a Select of UNITS. Delete-line button and new-category Select have no data-testid.", "selector": "[data-testid='invoice-lines']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/food-cost", "issues": ["max-w-5xl leaves about 40% of the 1920px screen empty on the right", "No error state: if the API fails the page stays on 'Caricamento…' forever (only a toast)", "New ingredients from OCR default to category 'Altro'. Consider asking the LLM for a category suggestion."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration7_foodcost_ocr.py", "/app/backend/tests/make_invoice.py", "/app/test_reports/pytest/iteration7.xml"],
+  "action_items": [
+    "Escape the supplier name in apply_invoice: {'$regex': f'^{re.escape(name)}$', '$options': 'i'} (also check other $regex uses on user input, e.g. ingredients q search)",
+    "InvoiceSheet: pass an unfiltered ingredient list (fetch /t/ingredients without params when the sheet opens) so auto-match and manual mapping work with filters active",
+    "FoodCost margin sort: put has_recipe=false items last (or have the backend return margin=null for them)",
+    "Decide the food-cost permission: require manager on GET /t/food-cost and hide nav-food-cost for staff, per the spec",
+    "Optional: editable line name, unit Select, data-testids on the line delete button and category select, an error state on the FoodCost page"
+  ],
+  "critical_code_review_comments": [
+    "routers/inventory.py apply_invoice: unescaped regex (500 / wrong supplier match)",
+    "routers/inventory.py list_ingredients: q goes into $regex unescaped too (same class of bug, pre-existing)",
+    "restore_for_order is correctly idempotent through the 'reso' marker. Side effect: an order cancelled, reopened (nuovo) and cancelled again stays restored once, but its stock is not depleted again on reopen. Acceptable but worth documenting.",
+    "ocr.py: a new LlmChat per call with a fixed session_id 'invoice-ocr' is fine (no shared history). The blank image returns 200 with lines=[] and the UI shows 'Nessuna riga.'"
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration7_foodcost_ocr.py", "/app/backend/tests/make_invoice.py"],
+  "success_rate": {"backend": "85% (11/13)", "frontend": "80% (owner flow ok; filtered-list match bug, margin sort bug)"},
+  "test_credentials": "owner@trattoria-demo.it / Demo2026!, fabio.borelli@icloud.com / RistoOS2026! (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Temporary ingredients (Zucchine, Rucola Selvatica, TEST_*), the suppliers they created and staff users were cleaned up. TEST tenants (test-fc-*) created by the superadmin were deactivated. The demo item Pizza Margherita recipe was restored after each test.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend/tests && REACT_APP_BACKEND_URL=https://ristoos.preview.emergentagent.com python -m pytest test_iteration7_foodcost_ocr.py -q -n 0. make_invoice.make(path, supplier, lines) builds a PIL invoice image. Gemini drops the 'TEST_' prefix from item names, so the match test uses an ingredient named 'Zucchine' (deleted in teardown). The scan test does NOT apply, so the demo 'Pomodoro' is not touched. UI: invoice-btn -> set_input_files('[data-testid=invoice-file-input]') -> wait for invoice-apply-btn (up to ~15s). Retest: special-char supplier, filtered-list match, margin sort, staff food-cost.",
+  "rca of the issue": "1) 500 on apply: supplier_name is interpolated raw into the regex '^...$', so Mongo rejects an invalid pattern (code 51091). Repro: POST /t/invoices/apply {supplier_name:'TEST_Rossi (srl) [ab', lines:[{ingredient_id:<id>, name:'x', qty:1}]} returns 500. Mitigation: re.escape. 2) Empty match dropdown: Inventory.jsx line 275 passes the filtered `list` state to InvoiceSheet. Repro: Magazzino -> click the 'Carne' chip -> Scansiona fattura -> upload an invoice with a Verdura item: the trigger is blank. Mitigation: use a separate full ingredient list."
+}

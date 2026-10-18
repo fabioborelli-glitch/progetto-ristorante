@@ -1,4 +1,5 @@
 from datetime import datetime, timezone, timedelta
+import re
 from typing import Optional, List
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from pydantic import BaseModel
@@ -92,8 +93,9 @@ async def list_ingredients(category: Optional[str] = None, q: Optional[str] = No
     if category and category != "all":
         query["category"] = category
     if q:
-        query["$or"] = [{"name": {"$regex": q, "$options": "i"}},
-                        {"supplier_name": {"$regex": q, "$options": "i"}},
+        rx = re.escape(q)
+        query["$or"] = [{"name": {"$regex": rx, "$options": "i"}},
+                        {"supplier_name": {"$regex": rx, "$options": "i"}},
                         {"barcode": q}]
     ings = await db.ingredients.find(query).sort("name", 1).to_list(5000)
     out = [ser(i) for i in ings]
@@ -326,7 +328,7 @@ async def item_food_cost(item_id: str, p: Principal = Depends(require_tenant()))
 
 # ---------- Food cost (bulk) ----------
 @router.get("/food-cost")
-async def food_cost_all(p: Principal = Depends(require_tenant())):
+async def food_cost_all(p: Principal = Depends(require_tenant("manager"))):
     items = await db.menu_items.find(tq(p)).sort("name", 1).to_list(1000)
     cats = {c["_id"]: c["name"] for c in await db.categories.find(tq(p)).to_list(200)}
     recipes = {r["item_id"]: r for r in await db.recipes.find(tq(p)).to_list(2000)}
@@ -348,10 +350,11 @@ async def food_cost_all(p: Principal = Depends(require_tenant())):
             "food_cost_pct": round(cost / price * 100, 1) if price and has_recipe else None,
             "has_recipe": has_recipe,
         })
-    with_recipe = [o for o in out if o["has_recipe"] and o["price"]]
-    avg = round(sum(o["food_cost_pct"] for o in with_recipe) / len(with_recipe), 1) if with_recipe else None
-    return {"items": out, "summary": {"total": len(out), "with_recipe": len(with_recipe),
-            "without_recipe": len(out) - len(with_recipe), "avg_food_cost_pct": avg}}
+    with_recipe_items = [o for o in out if o["has_recipe"]]
+    priced = [o for o in with_recipe_items if o["price"]]
+    avg = round(sum(o["food_cost_pct"] for o in priced) / len(priced), 1) if priced else None
+    return {"items": out, "summary": {"total": len(out), "with_recipe": len(with_recipe_items),
+            "without_recipe": len(out) - len(with_recipe_items), "avg_food_cost_pct": avg}}
 
 
 # ---------- Invoice OCR (fatture) ----------
@@ -399,7 +402,7 @@ async def apply_invoice(body: InvoiceApplyIn, p: Principal = Depends(require_ten
         raise HTTPException(status_code=400, detail="Nessuna riga da applicare")
     supplier_id = None
     if body.supplier_name:
-        s = await db.suppliers.find_one(tq(p, {"name": {"$regex": f"^{body.supplier_name.strip()}$", "$options": "i"}}))
+        s = await db.suppliers.find_one(tq(p, {"name": {"$regex": f"^{re.escape(body.supplier_name.strip())}$", "$options": "i"}}))
         if not s:
             s = {"_id": new_id(), "tenant_id": p.tenant_id, "name": body.supplier_name.strip(),
                  "phone": "", "email": "", "notes": "", "created_at": now_iso()}
