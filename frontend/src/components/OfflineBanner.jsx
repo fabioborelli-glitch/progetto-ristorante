@@ -16,7 +16,7 @@ export function OfflineBanner({ dark = false }) {
     }
   }, [s.lastSync]);
 
-  const base = "fixed top-0 inset-x-0 z-[60] flex items-center justify-center gap-3 px-4 py-2 text-sm font-semibold";
+  const base = "sticky top-0 inset-x-0 z-40 flex items-center justify-center gap-3 px-4 py-2 text-sm font-semibold";
   if (!s.online || s.pending > 0) {
     return (
       <div className={`${base} ${s.syncing ? "bg-amber-500 text-black" : "bg-[#E03131] text-white"}`} data-testid="offline-banner" data-state={s.syncing ? "syncing" : "offline"}>

@@ -16,11 +16,15 @@ export function TableSheet({ table, onClose, onChanged, canEdit }) {
   const [orders, setOrders] = useState([]);
   const [ordering, setOrdering] = useState(false);
   const [edit, setEdit] = useState({ name: "", seats: 4 });
+  const [live, setLive] = useState(null);
+  const view = live && table && live.id === table.id ? live : table;
 
   const loadOrders = () => table && api.get("/t/orders").then((r) => setOrders(r.data.filter((o) => o.table_id === table.id))).catch(() => {});
+  const refreshTable = () => table && api.get("/t/tables").then((r) => setLive(r.data.find((t) => t.id === table.id) || null)).catch(() => {});
 
   useEffect(() => {
     if (!table) return;
+    setLive(null);
     setEdit({ name: table.name, seats: table.seats });
     loadOrders();
   }, [table]);
@@ -61,7 +65,7 @@ export function TableSheet({ table, onClose, onChanged, canEdit }) {
     }
   };
 
-  const st = TABLE_STATUS[table.status];
+  const st = TABLE_STATUS[view.status];
   const menuUrl = `${window.location.origin}/r/${tenant?.slug}/menu?t=${table.code}`;
 
   return (
@@ -80,17 +84,17 @@ export function TableSheet({ table, onClose, onChanged, canEdit }) {
               <ClipboardList size={20} /> Prendi comanda
             </button>
             <button onClick={() => navigate(`/cassa?table=${table.id}`)} className="h-16 rounded-xl bg-[#E03131] text-white font-display text-lg font-extrabold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform" data-testid="go-to-pos-btn">
-              <Receipt size={20} /> {table.status === "libero" ? "Apri conto" : "Vai al conto"}
+              <Receipt size={20} /> {view.status === "libero" ? "Apri conto" : "Vai al conto"}
             </button>
           </div>
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Cambia stato</div>
             <div className="grid grid-cols-1 gap-2">
               {Object.entries(TABLE_STATUS).map(([k, v]) => (
-                <button key={k} onClick={() => setStatus(k)} disabled={table.status === k} data-testid={`set-status-${k}`}
-                  className={`h-14 rounded-lg border text-left px-4 font-medium flex items-center gap-3 transition-colors duration-200 active:scale-[0.98] disabled:opacity-40 ${table.status === k ? "border-gray-900" : "border-gray-200 hover:bg-gray-50"}`}>
+                <button key={k} onClick={() => setStatus(k)} disabled={view.status === k} data-testid={`set-status-${k}`}
+                  className={`h-14 rounded-lg border text-left px-4 font-medium flex items-center gap-3 transition-colors duration-200 active:scale-[0.98] disabled:opacity-40 ${view.status === k ? "border-gray-900" : "border-gray-200 hover:bg-gray-50"}`}>
                   <span className={`h-3 w-3 rounded-full ${v.color}`} />{v.label}
-                  {k === "libero" && table.status !== "libero" && <span className="ml-auto text-xs text-gray-500">chiude gli ordini</span>}
+                  {k === "libero" && view.status !== "libero" && <span className="ml-auto text-xs text-gray-500">chiude gli ordini</span>}
                 </button>
               ))}
             </div>
@@ -135,7 +139,7 @@ export function TableSheet({ table, onClose, onChanged, canEdit }) {
             </div>
           )}
         </div>
-        <WaiterOrderSheet open={ordering} onClose={() => setOrdering(false)} table={table} onSent={() => { loadOrders(); onChanged(); }} />
+        <WaiterOrderSheet open={ordering} onClose={() => setOrdering(false)} table={table} onSent={() => { loadOrders(); refreshTable(); onChanged(); }} />
       </SheetContent>
     </Sheet>
   );

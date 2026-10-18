@@ -83,7 +83,7 @@ class TestSettingsAndWhatsApp:
         rid = r.json()["id"]
         n = requests.post(f"{BASE_URL}/api/t/reservations/{rid}/notify", headers=owner_h,
                           json={"kind": "conferma"}, timeout=15)
-        assert n.status_code == 502, f"{n.status_code} body={n.text!r}"
+        assert n.status_code in (409, 502), f"{n.status_code} body={n.text!r}"
         try:
             detail = n.json().get("detail", "").lower()
             assert "canale" in detail or "nessun" in detail or "wa" in detail

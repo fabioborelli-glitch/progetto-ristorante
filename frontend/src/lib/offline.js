@@ -18,9 +18,11 @@ const tenantKey = () => localStorage.getItem("ristoos_act_as") || "t";
 const cacheKey = (url) => `${CACHE_PREFIX}${tenantKey()}:${url}`;
 export const cacheSet = (url, data) => { try { localStorage.setItem(cacheKey(url), JSON.stringify(data)); } catch {} };
 export const cacheGet = (url) => { try { const v = localStorage.getItem(cacheKey(url)); return v ? JSON.parse(v) : undefined; } catch { return undefined; } };
-const cacheUpdate = (url, fn) => {
+const cacheUpdate = (url, fn, initial) => {
   const prefix = cacheKey(url);
-  Object.keys(localStorage).filter((k) => k === prefix || k.startsWith(prefix + "?")).forEach((k) => {
+  const keys = Object.keys(localStorage).filter((k) => k === prefix || k.startsWith(prefix + "?"));
+  if (!keys.length && initial !== undefined) keys.push(prefix) && localStorage.setItem(prefix, JSON.stringify(initial));
+  keys.forEach((k) => {
     try { localStorage.setItem(k, JSON.stringify(fn(JSON.parse(localStorage.getItem(k))))); } catch {}
   });
 };
@@ -35,11 +37,11 @@ export const newClientId = () => `c-${Date.now()}-${Math.random().toString(36).s
 export const isNetworkError = (e) => !e?.response && (e?.code === "ERR_NETWORK" || e?.message === "Network Error" || !navigator.onLine);
 
 const QUEUEABLE = [
-  /^\/t\/orders$/, /^\/t\/orders\/[^/]+\/status$/, /^\/t\/tables\/[^/]+$/,
-  /^\/t\/bills\/[^/]+\/payments$/, /^\/t\/bills\/[^/]+\/close$/, /^\/t\/bills\/[^/]+$/,
-  /^\/t\/waitlist\/[^/]+$/, /^\/t\/reservations\/[^/]+$/,
+  ["post", /^\/t\/orders$/], ["patch", /^\/t\/orders\/[^/]+\/status$/], ["patch", /^\/t\/tables\/[^/]+$/],
+  ["post", /^\/t\/bills\/[^/]+\/payments$/], ["post", /^\/t\/bills\/[^/]+\/close$/], ["patch", /^\/t\/bills\/[^/]+$/],
+  ["patch", /^\/t\/waitlist\/[^/]+$/], ["patch", /^\/t\/reservations\/[^/]+$/],
 ];
-export const isQueueable = (method, url) => ["post", "patch"].includes(method) && QUEUEABLE.some((re) => re.test(url));
+export const isQueueable = (method, url) => QUEUEABLE.some(([m, re]) => m === method && re.test(url));
 
 function optimistic(entry) {
   const { method, url, data } = entry;
@@ -55,7 +57,7 @@ function optimistic(entry) {
       return { item_id: l.item_id, name: it.name || "Piatto", qty: l.qty, variant: l.variant || null, notes: l.notes || "", price: (it.price || 0) + (v?.price_delta || 0), station_id: it.station_id || null };
     });
     const order = { id: data.client_id, client_id: data.client_id, table_id: data.table_id, table_name: table?.name || "?", customer_name: data.customer_name || "Sala", notes: data.notes || "", items: lines, stations: {}, total: lines.reduce((a, l) => a + l.qty * l.price, 0), status: "nuovo", source: "sala", created_at: now, updated_at: now, offline: true };
-    cacheUpdate("/t/orders", (list) => [...list, order]);
+    cacheUpdate("/t/orders", (list) => [...list, order], []);
     cacheUpdate("/t/tables", (list) => list.map((t) => (t.id === data.table_id ? { ...t, status: "occupato", open_orders: (t.open_orders || 0) + 1 } : t)));
     return order;
   }
@@ -98,8 +100,21 @@ function optimistic(entry) {
   return { ...data, offline: true };
 }
 
+function describe(method, url, data) {
+  let m;
+  if (method === "post" && url === "/t/orders") return "Comanda cameriere";
+  if ((m = url.match(/^\/t\/orders\/[^/]+\/status$/))) return `Avanzamento ordine → ${data?.status || ""}`;
+  if ((m = url.match(/^\/t\/tables\/[^/]+$/))) return `Stato tavolo → ${data?.status || "modifica"}`;
+  if (url.match(/^\/t\/bills\/[^/]+\/payments$/)) return `Pagamento ${data?.method || ""} ${data?.amount != null ? data.amount.toFixed(2) + " €" : ""}`;
+  if (url.match(/^\/t\/bills\/[^/]+\/close$/)) return "Chiusura conto";
+  if (url.match(/^\/t\/bills\/[^/]+$/)) return "Modifica conto (sconto/coperti)";
+  if (url.match(/^\/t\/waitlist\/[^/]+$/)) return `Lista d'attesa → ${data?.status || "modifica"}`;
+  if (url.match(/^\/t\/reservations\/[^/]+$/)) return `Prenotazione → ${data?.status || "modifica"}`;
+  return `${method.toUpperCase()} ${url}`;
+}
+
 export function enqueue(method, url, data, label) {
-  const entry = { id: newClientId(), method, url, data, label, at: new Date().toISOString() };
+  const entry = { id: newClientId(), method, url, data, label: label || describe(method, url, data), at: new Date().toISOString() };
   const q = loadQueue();
   q.push(entry);
   saveQueue(q);
@@ -135,7 +150,7 @@ export async function flush() {
   if (!q.length) {
     state.lastSync = new Date().toISOString();
     state.online = true;
-    Object.keys(localStorage).filter((k) => k.startsWith(CACHE_PREFIX)).forEach((k) => localStorage.removeItem(k));
+    Object.keys(localStorage).filter((k) => k.startsWith(CACHE_PREFIX) && !k.includes(":/t/menu/")).forEach((k) => localStorage.removeItem(k));
     window.dispatchEvent(new CustomEvent("ristoos:synced"));
   }
   emit();

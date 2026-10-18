@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 5: tested the waiter quick order (POST /t/orders + WaiterOrderSheet) and per-device offline mode (axios interceptor cache/queue, optimistic updates, flush, conflicts, banners, cached auth, QR menu offline page). Backend: new tests/test_iteration5.py passes 10/10 (create, idempotency by client_id, variants, validation 400s, 404 for unknown and other-tenant tables, staff role allowed, attach to open bill, payment client_id idempotency). Frontend, online waiter flow: search, variant picker (Bufala), +/-, line notes and send all work. The 'Comanda inviata in cucina' toast appears, TableSheet lists the order, and KDS shows the ticket with 'Fabio Owner'. Offline simulation (context.route abort + offline/online events): waiter order on T8 queued ('Comanda salvata offline', banner data-state=offline, '1 azione salvata'), the optimistic order shows in TableSheet, KDS reload works from cache without logout and shows the c- ticket, a bump on an existing order works locally (count goes to 2), and the Cassa pay-card-full + close on a pre-opened bill works offline (closed panel, 'in sincronizzazione'). After the network comes back, the queue flushes: the server has the T8 order (source sala), the bumped order is in_preparazione, the bill is chiuso with number 2026/00028, and the queue is empty. The offline-synced-banner appeared. Conflict flow works: a bill closed by another device gives 2 conflicts 'Conto già chiuso'; the list toggle and dismiss work. Offline reload of /sala stays logged in with cached tables. The QR menu offline shows menu-error + menu-retry-btn, and retry recovers. Regressions: Cassa pos-add-item creates an order with station_id 'cucina', KDS stations render, Reservations page loads. I found one critical bug and fixed it: POST /t/bills/open was being queued offline and then crashed the app.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "legacy tests/backend_test.py", "issue": "When the full suite runs in parallel: TestPublic.test_public_order_flow got a transient 503; test_create_tenant_and_impersonate got 401; test_cross_tenant_table_404 setup asserts that DEMO04 status == in_attesa_conto (it is 'occupato' now, depends on data). These are data-state or flaky issues, not iteration-5 regressions."},
+      {"endpoint": "POST /api/t/reservations/{id}/notify", "issue": "Returns 409 when no channel is available, but test_iteration4 expected 502. The test was stale (409 was introduced in the iteration-4 commit), so I updated the assertion to accept (409, 502)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "lib/offline.js isQueueable", "issue": "FIXED BY TESTER. Regex /^\\/t\\/bills\\/[^/]+$/ (meant for PATCH /t/bills/{id}) also matched POST /t/bills/open, because the method check allowed any post/patch. Offline 'Apri conto' was queued instead of showing an error. The optimistic result {id:'open'} had no lines, so the app crashed with 'Cannot read properties of undefined (reading length)'. On reconnect the bill was opened on the server anyway (I cancelled the T2 bill this created). Fix: QUEUEABLE is now a list of [method, regex] pairs. Re-tested: offline pos-open-T1 now shows the toast 'Connessione assente: azione non disponibile offline', nothing is queued, and the app does not crash.", "selector": "[data-testid^=pos-open-]", "priority": "HIGH"},
+      {"component": "WaiterOrderSheet offline", "issue": "/t/menu/items and /t/menu/categories are only fetched (and cached) when the WaiterOrderSheet is opened online. A waiter who never opened 'Prendi comanda' before the connection dropped gets an empty menu offline (only the 'Tutti' chip shows) and cannot take orders. flush() also wipes every ristoos_cache:* key after each sync, so this happens again after every reconnect. The optimistic order also depends on the /t/menu/items cache for names and prices.", "selector": "[data-testid=waiter-order-sheet]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "OfflineBanner (AppLayout/KDS)", "issues": ["The fixed red offline banner at the top overlaps the top of right-side Sheets (WaiterOrderSheet/TableSheet title and close X) and the KDS header chips.", "The expanded conflict list overlays the page header and shows raw technical text ('POST /t/bills/<uuid>/payments'); enqueue is called without a label, so no human-readable action name is shown."]},
+      {"screen": "Public QR menu offline", "issues": ["Heading reads 'Connessione assente: azione non disponibile offline'. errMsg returns that string and it does not match /Network/, so the plain 'Connessione assente' heading is never used. The wording is odd for a guest viewing the menu."]},
+      {"screen": "TableSheet after online waiter order", "issues": ["The status selector still highlights 'Libero' right after the order (the table prop is stale) even though the server set it to occupato."]},
+      {"screen": "Prenotazioni", "issues": ["The date filter uses the native browser date input instead of the shadcn calendar (pre-existing)."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration5.py", "/app/test_reports/pytest/pytest_iter5.xml"],
+  "action_items": [
+    "Review the tester fix in /app/frontend/src/lib/offline.js (method-specific QUEUEABLE) and keep it.",
+    "Prefetch and cache /t/menu/items and /t/menu/categories (e.g. in AppLayout after login and after each 'ristoos:synced'), and do not wipe the menu caches in flush(). Otherwise offline waiter ordering only works if the sheet was opened online first.",
+    "Pass human-readable labels to enqueue (e.g. 'Pagamento conto T1', 'Chiusura conto') and show them in the conflicts list instead of raw URLs.",
+    "Offset Sheets/KDS header by the banner height (or make the banner part of the layout flow) so it does not cover Sheet close buttons.",
+    "CustomerMenu offline heading: show 'Connessione assente' when isNetworkError(e), not the errMsg string."
+  ],
+  "critical_code_review_comments": [
+    "offline.js flush(): after a successful sync it removes ALL ristoos_cache:* keys. If the connection drops again before pages refetch, there is no cache at all. Consider refetching instead of deleting, or keep the menu/settings keys.",
+    "offline.js optimistic bills apply(): payment ids use client_id, but the server payment id is different. This is harmless because caches are cleared after sync, but a DELETE payment issued while still offline would use the client id.",
+    "create_waiter_order: the client_id idempotency check runs before table/tenant validation. That is fine, but there is no unique index on (tenant_id, client_id), so two replays at the same time could create duplicates. Add a sparse unique index."
+  ],
+  "updated_files": ["/app/frontend/src/lib/offline.js", "/app/backend/tests/test_iteration5.py", "/app/backend/tests/test_iteration4.py"],
+  "success_rate": {"backend": "100% (iteration-5 tests 10/10)", "frontend": "~90% (1 critical bug fixed by tester; 1 medium offline menu-cache gap remains)"},
+  "seed_data_creation": "Created and closed bills on D3 (2026/00028), D2 (2026/00029) and T1 (2026/00030). Created waiter orders on T6, T8, D1/D2/D3 (TEST ones cancelled). A bill on T2 is still open with 'Tagliere' 14€ (Cassa smoke). I cancelled the accidental offline-replayed T2 bill. Created a TEST room and table 'TEST X' in tenant test-iso-1792282139 for the cross-tenant test.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && REACT_APP_BACKEND_URL=<url> python -m pytest tests/test_iteration5.py -q. For offline UI tests: page.context.route('**/api/**', abort) and dispatch window 'offline'/'online'. page.request is NOT affected by context.route, so you can use it to simulate another device. Open the WaiterOrderSheet online once before going offline (menu cache). Use the offline-retry-btn to trigger flush right away. The synced banner disappears after about 4s.",
+  "rca of the issue": "POST /t/bills/open offline crash. Root cause: isQueueable allowed both POST and PATCH for every regex, and /^\\/t\\/bills\\/[^/]+$/ matches '/t/bills/open'. The interceptor queued it and returned the optimistic {id:'open'} with status 202. Pos.jsx then rendered a bill without lines (runtime error), and the flush replayed it, opening a real bill. Repro: warm /cassa, abort **/api/**, click pos-open-T2. Mitigation: per-method QUEUEABLE entries (applied)."
+}

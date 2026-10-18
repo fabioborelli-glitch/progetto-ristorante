@@ -1,6 +1,8 @@
+import { useEffect } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { LayoutDashboard, Grid2x2, CalendarDays, UtensilsCrossed, QrCode, ChefHat, Settings, LogOut, ArrowLeftRight, ExternalLink, Receipt, Hourglass } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { OfflineBanner } from "@/components/OfflineBanner";
 
@@ -19,9 +21,17 @@ export function AppLayout({ children }) {
   const { user, logout, isSuper, tenant, setActAs } = useAuth();
   const navigate = useNavigate();
 
+  useEffect(() => {
+    const prefetch = () => { ["/t/menu/items", "/t/menu/categories", "/t/tables", "/t/orders", "/t/bills"].forEach((u) => api.get(u).catch(() => {})); };
+    prefetch();
+    window.addEventListener("ristoos:synced", prefetch);
+    return () => window.removeEventListener("ristoos:synced", prefetch);
+  }, [tenant?.id]);
+
   return (
-    <div className="min-h-screen bg-[#FAFAFA] text-[#111827] flex">
+    <div className="min-h-screen bg-[#FAFAFA] text-[#111827] flex flex-col">
       <OfflineBanner />
+      <div className="flex flex-1 min-h-0">
       <aside className="hidden md:flex w-64 flex-col border-r border-gray-200 bg-white" data-testid="sidebar">
         <div className="px-6 py-6 border-b border-gray-200">
           <div className="font-display text-2xl font-extrabold tracking-tight">
@@ -97,6 +107,7 @@ export function AppLayout({ children }) {
             </NavLink>
           ))}
         </nav>
+      </div>
       </div>
     </div>
   );

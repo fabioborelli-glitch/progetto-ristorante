@@ -50,20 +50,24 @@ Scelte utente (giugno 2026): MVP = **Prenotazioni + piantina sala** e **Menu dig
 - **Lista d'attesa** `/attesa`: coda con posizione, chiama / accomoda (assegna tavolo → occupato) / no show / annulla, storico giornata, QR + codice per il cliente; pagina pubblica `/r/{slug}/attesa/{code}` con polling che mostra quanti gruppi prima e "Il tuo tavolo è pronto!" (vibrazione). Nessun messaggio inviato (scelta utente). Eventi WS `waitlist_changed`.
 - Stripe pagamento al tavolo: rimandato su scelta utente.
 
+## Implementato (18/06/2026) — iterazione 5
+- **Ordine rapido cameriere**: da Sala → tavolo → "Prendi comanda": ricerca, categorie, varianti, note per riga, invio in cucina (`POST /api/t/orders`, idempotente per `client_id`, si aggancia al conto aperto, aggiorna tavolo e KDS via WS).
+- **Modalità offline per dispositivo (PWA)**: `lib/offline.js` — cache GET `/t/*` in localStorage, coda azioni (comande, avanzamento ordini, stato tavoli, pagamenti/chiusura/modifica conti, lista d'attesa, prenotazioni) con aggiornamenti ottimistici, sync automatica al ritorno rete (evento online + timer 10s), politica "vince il primo che sincronizza" con banner conflitti; banner Offline / Sincronizzazione / Sincronizzato; sessione mantenuta offline (utente in cache); prefetch menu/tavoli/ordini/conti dopo login e dopo ogni sync; service worker `public/sw.js` per app shell (solo build production); pagina QR cliente "Connessione assente, chiedi al personale". Limiti: aprire un nuovo conto richiede rete; i dispositivi non comunicano tra loro senza internet (serve mini-server locale → Fase 3).
+
 ## Backlog prioritario
 ### P0 (prossimo)
 - Pagamenti Stripe al tavolo (QR sullo scontrino) — rimandato
 - Attivare WhatsApp inserendo le credenziali Twilio
 ### P1
-- Menu multilingua completo, eliminazione tenant, audit log
-- Integrazione RT fiscale (Epson/Custom) per corrispettivi
-- Promemoria "3 ore prima" come opzione per tenant; avviso waitlist via WhatsApp/SMS
+- Offline "totale" di sala con hub locale (Raspberry/PC) per QR→KDS senza internet
+- Apertura conto offline (id locale + riconciliazione)
+- Menu multilingua completo, eliminazione tenant, audit log, RT fiscale
 ### P2 (Fase 2/3 del piano)
 - Magazzino + food cost, staff e turni, RBAC granulare, consolidato multi-locale
 - Fatturazione elettronica SDI (Acube)
 - App nativa camerieri, CRM/fidelity, AI suggerimenti menu
 
 ## Test
-- Report: /app/test_reports/iteration_1.json … iteration_4.json
+- Report: /app/test_reports/iteration_1.json … iteration_5.json
 - Suite: `cd /app/backend && python -m pytest tests/ -q` (test email possono dare 503 per rate-limit del proxy)
 - Credenziali: /app/memory/test_credentials.md

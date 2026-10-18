@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import { ShoppingBag, Plus, Minus, X, Info, WifiOff } from "lucide-react";
 import { api, errMsg, fmtEur, imgUrl, ALLERGEN_LABELS } from "@/lib/api";
+import { isNetworkError } from "@/lib/offline";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,6 +15,7 @@ export default function CustomerMenu() {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const [netErr, setNetErr] = useState(false);
   const [activeCat, setActiveCat] = useState(null);
   const [picking, setPicking] = useState(null);
   const [cart, setCart] = useState([]);
@@ -25,7 +27,7 @@ export default function CustomerMenu() {
   useEffect(() => {
     api.get(`/public/${slug}/menu`, { params: tableCode ? { table: tableCode } : {} })
       .then((r) => { setData(r.data); setActiveCat(r.data.categories[0]?.id); })
-      .catch((e) => setError(errMsg(e)));
+      .catch((e) => { setNetErr(isNetworkError(e)); setError(errMsg(e)); });
   }, [slug, tableCode]);
 
   const total = useMemo(() => cart.reduce((a, l) => a + l.price * l.qty, 0), [cart]);
@@ -63,8 +65,8 @@ export default function CustomerMenu() {
     <div className="min-h-screen grid place-items-center bg-[#FDFBF7] text-[#292524] p-6 text-center" data-testid="menu-error">
       <div className="max-w-sm space-y-3">
         <WifiOff size={40} className="mx-auto text-[#D97706]" />
-        <h1 className="font-display text-2xl font-extrabold">{navigator.onLine && !/Network/i.test(error) ? error : "Connessione assente"}</h1>
-        <p className="text-sm text-[#78716c]">{navigator.onLine && !/Network/i.test(error) ? "" : "Il menu digitale non è raggiungibile in questo momento. Chiedi al personale: prenderà la tua ordinazione dal tablet."}</p>
+        <h1 className="font-display text-2xl font-extrabold">{netErr ? "Connessione assente" : error}</h1>
+        <p className="text-sm text-[#78716c]">{netErr ? "Il menu digitale non è raggiungibile in questo momento. Chiedi al personale: prenderà la tua ordinazione dal tablet." : ""}</p>
         <button onClick={() => window.location.reload()} className="h-11 px-5 rounded-full bg-[#292524] text-white text-sm font-semibold" data-testid="menu-retry-btn">Riprova</button>
       </div>
     </div>
