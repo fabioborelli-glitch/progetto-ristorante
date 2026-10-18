@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Trash2, QrCode, Receipt } from "lucide-react";
+import { Trash2, QrCode, Receipt, ClipboardList } from "lucide-react";
 import { api, errMsg, fmtEur, TABLE_STATUS, ORDER_STATUS } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { WaiterOrderSheet } from "@/components/WaiterOrderSheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,12 +14,15 @@ export function TableSheet({ table, onClose, onChanged, canEdit }) {
   const { tenant } = useAuth();
   const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
+  const [ordering, setOrdering] = useState(false);
   const [edit, setEdit] = useState({ name: "", seats: 4 });
+
+  const loadOrders = () => table && api.get("/t/orders").then((r) => setOrders(r.data.filter((o) => o.table_id === table.id))).catch(() => {});
 
   useEffect(() => {
     if (!table) return;
     setEdit({ name: table.name, seats: table.seats });
-    api.get("/t/orders").then((r) => setOrders(r.data.filter((o) => o.table_id === table.id)));
+    loadOrders();
   }, [table]);
 
   if (!table) return null;
@@ -71,9 +75,14 @@ export function TableSheet({ table, onClose, onChanged, canEdit }) {
         </SheetHeader>
 
         <div className="mt-6 space-y-8">
-          <button onClick={() => navigate(`/cassa?table=${table.id}`)} className="w-full h-16 rounded-xl bg-[#E03131] text-white font-display text-xl font-extrabold flex items-center justify-center gap-3 active:scale-[0.98] transition-transform" data-testid="go-to-pos-btn">
-            <Receipt size={22} /> {table.status === "libero" ? "Apri conto in cassa" : "Vai al conto"}
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => setOrdering(true)} className="h-16 rounded-xl bg-gray-900 text-white font-display text-lg font-extrabold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform" data-testid="take-order-btn">
+              <ClipboardList size={20} /> Prendi comanda
+            </button>
+            <button onClick={() => navigate(`/cassa?table=${table.id}`)} className="h-16 rounded-xl bg-[#E03131] text-white font-display text-lg font-extrabold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform" data-testid="go-to-pos-btn">
+              <Receipt size={20} /> {table.status === "libero" ? "Apri conto" : "Vai al conto"}
+            </button>
+          </div>
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Cambia stato</div>
             <div className="grid grid-cols-1 gap-2">
@@ -126,6 +135,7 @@ export function TableSheet({ table, onClose, onChanged, canEdit }) {
             </div>
           )}
         </div>
+        <WaiterOrderSheet open={ordering} onClose={() => setOrdering(false)} table={table} onSent={() => { loadOrders(); onChanged(); }} />
       </SheetContent>
     </Sheet>
   );

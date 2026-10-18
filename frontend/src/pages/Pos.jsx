@@ -5,6 +5,7 @@ import { Receipt, Wifi, WifiOff, History } from "lucide-react";
 import { api, errMsg, fmtEur, TABLE_STATUS, PAY_METHODS } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useTenantSocket } from "@/hooks/useTenantSocket";
+import { useOnSynced } from "@/hooks/useOffline";
 import { BillPanel } from "@/components/pos/BillPanel";
 import { HistorySheet } from "@/components/pos/HistorySheet";
 
@@ -53,14 +54,16 @@ export default function Pos() {
 
   const openForTable = async (tableId) => {
     try {
-      const { data } = await api.post("/t/bills/open", { table_id: tableId });
-      setBill(data);
+      const res = await api.post("/t/bills/open", { table_id: tableId });
+      setBill(res.data);
       setParams({});
       load();
     } catch (e) {
-      toast.error(errMsg(e));
+      toast.error(errMsg(e, "Aprire un nuovo conto richiede la connessione"));
     }
   };
+
+  useOnSynced(() => { load(); setBill((b) => { if (b) refreshBill(b.id); return b; }); });
 
   const select = async (b) => refreshBill(b.id);
 

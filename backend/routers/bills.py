@@ -225,18 +225,21 @@ async def split_bill(bill_id: str, body: SplitIn, p: Principal = Depends(require
 class PaymentIn(BaseModel):
     method: str
     amount: float
+    client_id: Optional[str] = None
 
 
 @router.post("/{bill_id}/payments")
 async def add_payment(bill_id: str, body: PaymentIn, p: Principal = Depends(require_tenant())):
     bill = await load_bill(p, bill_id)
+    if body.client_id and any(pm.get("client_id") == body.client_id for pm in bill["payments"]):
+        return ser(bill)
     if bill["status"] != "aperto":
         raise HTTPException(status_code=400, detail="Conto già chiuso")
     if body.method not in PAY_METHODS:
         raise HTTPException(status_code=400, detail="Metodo non valido")
     if body.amount <= 0:
         raise HTTPException(status_code=400, detail="Importo non valido")
-    pm = {"id": new_id(), "method": body.method, "amount": round(body.amount, 2), "at": now_iso()}
+    pm = {"id": new_id(), "method": body.method, "amount": round(body.amount, 2), "at": now_iso(), "client_id": body.client_id}
     res = await db.bills.find_one_and_update({"_id": bill_id}, {"$push": {"payments": pm}}, return_document=True)
     await hub.emit(p.tenant_id, "bills_changed")
     return out(res)

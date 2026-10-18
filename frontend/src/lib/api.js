@@ -1,4 +1,5 @@
 import axios from "axios";
+import { installOffline, isNetworkError } from "@/lib/offline";
 
 export const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -12,13 +13,15 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-export function errMsg(e, fallback = "Si è verificato un errore") {
+export const errMsg = (e, fallback = "Si è verificato un errore") => {
   const d = e?.response?.data?.detail;
-  if (!d) return e?.message || fallback;
+  if (!d) return isNetworkError(e) ? "Connessione assente: azione non disponibile offline" : e?.message || fallback;
   if (typeof d === "string") return d;
   if (Array.isArray(d)) return d.map((x) => x?.msg || JSON.stringify(x)).join(" ");
   return d?.msg || String(d);
-}
+};
+
+installOffline(api);
 
 export const fmtEur = (n) =>
   new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(n || 0);

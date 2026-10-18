@@ -2,6 +2,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { LayoutDashboard, Grid2x2, CalendarDays, UtensilsCrossed, QrCode, ChefHat, Settings, LogOut, ArrowLeftRight, ExternalLink, Receipt, Hourglass } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
+import { OfflineBanner } from "@/components/OfflineBanner";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, id: "nav-dashboard" },
@@ -20,6 +21,7 @@ export function AppLayout({ children }) {
 
   return (
     <div className="min-h-screen bg-[#FAFAFA] text-[#111827] flex">
+      <OfflineBanner />
       <aside className="hidden md:flex w-64 flex-col border-r border-gray-200 bg-white" data-testid="sidebar">
         <div className="px-6 py-6 border-b border-gray-200">
           <div className="font-display text-2xl font-extrabold tracking-tight">

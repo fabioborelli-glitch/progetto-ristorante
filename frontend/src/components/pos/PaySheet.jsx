@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Banknote, CreditCard, Shuffle } from "lucide-react";
 import { api, errMsg, fmtEur } from "@/lib/api";
+import { newClientId } from "@/lib/offline";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,7 +28,7 @@ export function PaySheet({ open, onClose, bill, onChanged }) {
     try {
       let data = bill;
       for (const pm of payments.filter((p) => p.amount > 0)) {
-        ({ data } = await api.post(`/t/bills/${bill.id}/payments`, pm));
+        ({ data } = await api.post(`/t/bills/${bill.id}/payments`, { ...pm, client_id: newClientId() }));
       }
       onChanged(data);
       toast.success(data.remaining <= 0.009 ? "Conto saldato: puoi chiuderlo" : `Incassato, restano ${fmtEur(data.remaining)}`);

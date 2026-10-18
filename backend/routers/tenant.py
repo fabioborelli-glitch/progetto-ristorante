@@ -9,7 +9,7 @@ from core import (db, new_id, now_iso, ser, tq, get_scoped_or_404, require_tenan
 from services.ws import hub
 from services.notify import notify_reservation
 from services import whatsapp
-from services.stations import resolve_station, derive_order_status, DEFAULT_STATIONS
+from services.stations import resolve_station, derive_order_status, DEFAULT_STATIONS, build_order_lines
 
 router = APIRouter(prefix="/t", tags=["tenant"])
 
@@ -421,6 +421,67 @@ async def delete_item(item_id: str, p: Principal = Depends(require_tenant("manag
 class OrderStatusIn(BaseModel):
     status: str
     station_id: Optional[str] = None
+
+
+class WaiterLine(BaseModel):
+    item_id: str
+    qty: int = 1
+    variant: Optional[str] = None
+    notes: Optional[str] = ""
+
+
+class WaiterOrderIn(BaseModel):
+    table_id: str
+    lines: List[WaiterLine]
+    notes: Optional[str] = ""
+    customer_name: Optional[str] = ""
+    client_id: Optional[str] = None
+
+
+@router.post("/orders", status_code=201)
+async def create_waiter_order(body: WaiterOrderIn, p: Principal = Depends(require_tenant())):
+    if body.client_id:
+        existing = await db.orders.find_one(tq(p, {"client_id": body.client_id}))
+        if existing:
+            return ser(existing)
+    table = await get_scoped_or_404(p, "tables", body.table_id)
+    if not body.lines:
+        raise HTTPException(status_code=400, detail="Comanda vuota")
+    tenant = await db.tenants.find_one({"_id": p.tenant_id})
+    ids = [l.item_id for l in body.lines]
+    items = {i["_id"]: i for i in await db.menu_items.find(tq(p, {"_id": {"$in": ids}})).to_list(200)}
+    cats = {c["_id"]: c for c in await db.categories.find(tq(p)).to_list(100)}
+    raw, total = [], 0.0
+    for l in body.lines:
+        it = items.get(l.item_id)
+        if not it or l.qty < 1:
+            raise HTTPException(status_code=400, detail="Piatto non valido")
+        price = it["price"]
+        if l.variant:
+            v = next((v for v in it.get("variants", []) if v["name"] == l.variant), None)
+            if not v:
+                raise HTTPException(status_code=400, detail="Variante non valida")
+            price += v["price_delta"]
+        raw.append({"item": it, "qty": l.qty, "variant": l.variant, "notes": l.notes, "price": price})
+        total += price * l.qty
+    lines, stations = build_order_lines(tenant, items, cats, raw)
+    bill = await db.bills.find_one(tq(p, {"table_id": table["_id"], "status": "aperto", "parent_id": None}))
+    doc = {"_id": new_id(), "tenant_id": p.tenant_id, "table_id": table["_id"], "table_name": table["name"],
+           "customer_name": body.customer_name or p.name or "Sala", "notes": body.notes or "", "items": lines,
+           "stations": stations, "total": round(total, 2), "status": "nuovo", "source": "sala",
+           "client_id": body.client_id, "bill_id": bill["_id"] if bill else None,
+           "created_at": now_iso(), "updated_at": now_iso()}
+    await db.orders.insert_one(doc)
+    if bill:
+        bl = [{"key": f"{doc['_id']}:{i}", "order_id": doc["_id"], "item_id": it["item_id"], "name": it["name"],
+               "variant": it.get("variant"), "qty": it["qty"], "price": it["price"], "station_id": it.get("station_id")}
+              for i, it in enumerate(lines)]
+        await db.bills.update_one({"_id": bill["_id"]}, {"$push": {"lines": {"$each": bl}}})
+        await hub.emit(p.tenant_id, "bills_changed")
+    await db.tables.update_one({"_id": table["_id"]}, {"$set": {"status": "occupato"}})
+    await hub.emit(p.tenant_id, "orders_changed", {"order_id": doc["_id"], "table_name": table["name"]})
+    await hub.emit(p.tenant_id, "tables_changed")
+    return ser(doc)
 
 
 @router.get("/orders")

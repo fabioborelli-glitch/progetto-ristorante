@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
-import { ShoppingBag, Plus, Minus, X, Info } from "lucide-react";
+import { ShoppingBag, Plus, Minus, X, Info, WifiOff } from "lucide-react";
 import { api, errMsg, fmtEur, imgUrl, ALLERGEN_LABELS } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,7 +59,16 @@ export default function CustomerMenu() {
     }
   };
 
-  if (error && !data) return <div className="min-h-screen grid place-items-center bg-[#FDFBF7] text-[#292524] p-6 text-center" data-testid="menu-error">{error}</div>;
+  if (error && !data) return (
+    <div className="min-h-screen grid place-items-center bg-[#FDFBF7] text-[#292524] p-6 text-center" data-testid="menu-error">
+      <div className="max-w-sm space-y-3">
+        <WifiOff size={40} className="mx-auto text-[#D97706]" />
+        <h1 className="font-display text-2xl font-extrabold">{navigator.onLine && !/Network/i.test(error) ? error : "Connessione assente"}</h1>
+        <p className="text-sm text-[#78716c]">{navigator.onLine && !/Network/i.test(error) ? "" : "Il menu digitale non è raggiungibile in questo momento. Chiedi al personale: prenderà la tua ordinazione dal tablet."}</p>
+        <button onClick={() => window.location.reload()} className="h-11 px-5 rounded-full bg-[#292524] text-white text-sm font-semibold" data-testid="menu-retry-btn">Riprova</button>
+      </div>
+    </div>
+  );
   if (!data) return <div className="min-h-screen bg-[#FDFBF7]" />;
 
   const scrollTo = (id) => { setActiveCat(id); document.getElementById(`cat-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" }); };

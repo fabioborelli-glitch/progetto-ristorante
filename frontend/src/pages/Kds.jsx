@@ -5,6 +5,8 @@ import { ChefHat, Volume2, VolumeX, ArrowLeft, Wifi, WifiOff } from "lucide-reac
 import { api, errMsg, ORDER_STATUS } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useTenantSocket } from "@/hooks/useTenantSocket";
+import { useOnSynced } from "@/hooks/useOffline";
+import { OfflineBanner } from "@/components/OfflineBanner";
 
 const NEXT = { nuovo: ["in_preparazione", "Inizia"], in_preparazione: ["pronto", "Pronto"], pronto: ["servito", "Servito"] };
 
@@ -69,6 +71,7 @@ export default function Kds() {
   const connected = useTenantSocket((event) => {
     if (event === "orders_changed") load();
   });
+  useOnSynced(load);
 
   const bump = async (o) => {
     const [status] = NEXT[o.effStatus];
@@ -92,6 +95,7 @@ export default function Kds() {
 
   return (
     <div className="dark min-h-screen bg-[#0A0A0A] text-[#F8FAFC]" data-testid="kds-page">
+      <OfflineBanner />
       <header className="sticky top-0 z-10 bg-[#0A0A0A]/90 backdrop-blur border-b border-[#334155] px-5 py-4 flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-3">
           <ChefHat className="text-[#FF3B30]" />

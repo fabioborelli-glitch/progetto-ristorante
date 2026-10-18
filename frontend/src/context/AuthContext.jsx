@@ -13,9 +13,12 @@ export function AuthProvider({ children }) {
   const refresh = useCallback(async () => {
     try {
       const { data } = await api.get("/auth/me");
+      localStorage.setItem("ristoos_user", JSON.stringify(data));
       setUser(data);
-    } catch {
-      setUser(false);
+    } catch (e) {
+      const cached = localStorage.getItem("ristoos_user");
+      if (!e?.response && cached) setUser(JSON.parse(cached));
+      else setUser(false);
     }
   }, []);
 
@@ -30,6 +33,7 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     const { data } = await api.post("/auth/login", { email, password });
     localStorage.setItem("ristoos_token", data.access_token);
+    localStorage.setItem("ristoos_user", JSON.stringify(data));
     setUser(data);
     return data;
   };
@@ -39,6 +43,7 @@ export function AuthProvider({ children }) {
       await api.post("/auth/logout");
     } catch {}
     localStorage.removeItem("ristoos_token");
+    localStorage.removeItem("ristoos_user");
     localStorage.removeItem("ristoos_act_as");
     localStorage.removeItem("ristoos_act_as_tenant");
     setActAsState(null);
