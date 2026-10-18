@@ -10,7 +10,7 @@ from services.ws import hub
 from services.notify import notify_reservation
 from services import whatsapp
 from services.stations import resolve_station, derive_order_status, DEFAULT_STATIONS, build_order_lines
-from services.inventory import deplete_for_order
+from services.inventory import deplete_for_order, restore_for_order
 
 router = APIRouter(prefix="/t", tags=["tenant"])
 
@@ -511,6 +511,8 @@ async def set_order_status(order_id: str, body: OrderStatusIn, p: Principal = De
     res = await db.orders.find_one_and_update(tq(p, {"_id": order_id}),
                                               {"$set": {"status": new_status, "stations": stations, "updated_at": now_iso()}},
                                               return_document=True)
+    if new_status == "annullato" and order.get("status") != "annullato":
+        await restore_for_order(p.tenant_id, order_id)
     if new_status in ("servito", "annullato"):
         remaining = await db.orders.count_documents(tq(p, {"table_id": order["table_id"],
                                                            "status": {"$in": ["nuovo", "in_preparazione", "pronto"]}}))

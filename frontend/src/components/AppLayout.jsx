@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Grid2x2, CalendarDays, UtensilsCrossed, QrCode, ChefHat, Settings, LogOut, ArrowLeftRight, ExternalLink, Receipt, Hourglass, Package } from "lucide-react";
+import { LayoutDashboard, Grid2x2, CalendarDays, UtensilsCrossed, QrCode, ChefHat, Settings, LogOut, ArrowLeftRight, ExternalLink, Receipt, Hourglass, Package, Calculator } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ const NAV = [
   { to: "/attesa", label: "Attesa", icon: Hourglass, id: "nav-attesa" },
   { to: "/menu", label: "Menu", icon: UtensilsCrossed, id: "nav-menu" },
   { to: "/magazzino", label: "Magazzino", icon: Package, id: "nav-magazzino" },
+  { to: "/food-cost", label: "Food Cost", icon: Calculator, id: "nav-food-cost" },
   { to: "/qr", label: "QR Tavoli", icon: QrCode, id: "nav-qr" },
   { to: "/impostazioni", label: "Impostazioni", icon: Settings, id: "nav-impostazioni" },
 ];
@@ -94,7 +95,7 @@ export function AppLayout({ children }) {
           <Button variant="ghost" size="sm" onClick={logout} data-testid="logout-btn-mobile"><LogOut size={16} /></Button>
         </header>
         <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8">{children}</main>
-        <nav className="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-gray-200 grid grid-cols-9" data-testid="mobile-nav">
+        <nav className="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-gray-200 grid grid-cols-10 overflow-x-auto" data-testid="mobile-nav">
           {NAV.map((n) => (
             <NavLink
               key={n.to}

@@ -1,9 +1,10 @@
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from pydantic import BaseModel
 from core import db, new_id, now_iso, ser, tq, get_scoped_or_404, require_tenant, Principal
 from services.inventory import DEFAULT_INV_CATEGORIES, UNITS, stock_value, record_movement
+from services.ocr import extract_invoice
 
 router = APIRouter(prefix="/t", tags=["inventory"])
 
@@ -321,3 +322,111 @@ async def item_food_cost(item_id: str, p: Principal = Depends(require_tenant()))
     return {"item_id": item_id, "cost": round(cost, 2), "price": price,
             "margin": round(price - cost, 2),
             "food_cost_pct": round(cost / price * 100, 1) if price else None}
+
+
+# ---------- Food cost (bulk) ----------
+@router.get("/food-cost")
+async def food_cost_all(p: Principal = Depends(require_tenant())):
+    items = await db.menu_items.find(tq(p)).sort("name", 1).to_list(1000)
+    cats = {c["_id"]: c["name"] for c in await db.categories.find(tq(p)).to_list(200)}
+    recipes = {r["item_id"]: r for r in await db.recipes.find(tq(p)).to_list(2000)}
+    ings = {i["_id"]: i for i in await db.ingredients.find(tq(p)).to_list(10000)}
+    out = []
+    for it in items:
+        rec = recipes.get(it["_id"])
+        cost = 0.0
+        has_recipe = bool(rec and rec.get("lines"))
+        if rec:
+            for l in rec.get("lines", []):
+                ing = ings.get(l["ingredient_id"])
+                if ing:
+                    cost += (ing.get("cost_per_unit") or 0) * l["qty"]
+        price = it.get("price") or 0
+        out.append({
+            "item_id": it["_id"], "name": it["name"], "category": cats.get(it.get("category_id"), ""),
+            "price": price, "cost": round(cost, 2), "margin": round(price - cost, 2),
+            "food_cost_pct": round(cost / price * 100, 1) if price and has_recipe else None,
+            "has_recipe": has_recipe,
+        })
+    with_recipe = [o for o in out if o["has_recipe"] and o["price"]]
+    avg = round(sum(o["food_cost_pct"] for o in with_recipe) / len(with_recipe), 1) if with_recipe else None
+    return {"items": out, "summary": {"total": len(out), "with_recipe": len(with_recipe),
+            "without_recipe": len(out) - len(with_recipe), "avg_food_cost_pct": avg}}
+
+
+# ---------- Invoice OCR (fatture) ----------
+@router.post("/invoices/scan")
+async def scan_invoice(file: UploadFile = File(...), p: Principal = Depends(require_tenant("manager"))):
+    if not (file.content_type or "").startswith("image/"):
+        raise HTTPException(status_code=400, detail="Carica una foto della fattura (JPEG/PNG)")
+    data = await file.read()
+    if len(data) > 12 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Immagine troppo grande (max 12MB)")
+    try:
+        parsed = await extract_invoice(data, file.content_type)
+    except RuntimeError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    ings = await db.ingredients.find(tq(p)).to_list(10000)
+    by_name = {i["name"].lower().strip(): i for i in ings}
+    for l in parsed["lines"]:
+        key = l["name"].lower().strip()
+        match = by_name.get(key)
+        if not match:
+            match = next((i for i in ings if key and (key in i["name"].lower() or i["name"].lower() in key)), None)
+        l["ingredient_id"] = match["_id"] if match else None
+        l["matched_name"] = match["name"] if match else None
+    return parsed
+
+
+class InvoiceApplyLine(BaseModel):
+    name: str
+    ingredient_id: Optional[str] = None  # existing ingredient to receive into
+    qty: float
+    unit: Optional[str] = "pz"
+    unit_cost: Optional[float] = None
+    category: Optional[str] = "Altro"
+    create_new: bool = False
+
+
+class InvoiceApplyIn(BaseModel):
+    supplier_name: Optional[str] = ""
+    lines: List[InvoiceApplyLine]
+
+
+@router.post("/invoices/apply", status_code=201)
+async def apply_invoice(body: InvoiceApplyIn, p: Principal = Depends(require_tenant("manager"))):
+    if not body.lines:
+        raise HTTPException(status_code=400, detail="Nessuna riga da applicare")
+    supplier_id = None
+    if body.supplier_name:
+        s = await db.suppliers.find_one(tq(p, {"name": {"$regex": f"^{body.supplier_name.strip()}$", "$options": "i"}}))
+        if not s:
+            s = {"_id": new_id(), "tenant_id": p.tenant_id, "name": body.supplier_name.strip(),
+                 "phone": "", "email": "", "notes": "", "created_at": now_iso()}
+            await db.suppliers.insert_one(s)
+        supplier_id = s["_id"]
+    created, received = 0, 0
+    for l in body.lines:
+        if l.qty <= 0:
+            continue
+        ing = None
+        if l.ingredient_id:
+            ing = await db.ingredients.find_one(tq(p, {"_id": l.ingredient_id}))
+        if not ing and l.create_new:
+            unit = l.unit if l.unit in UNITS else "pz"
+            ing = {"_id": new_id(), "tenant_id": p.tenant_id, "name": l.name.strip(), "category": l.category or "Altro",
+                   "unit": unit, "cost_per_unit": l.unit_cost or 0, "min_stock": 0, "par_stock": 0, "barcode": "",
+                   "supplier_id": supplier_id, "supplier_name": body.supplier_name or "", "not_in_pos": False,
+                   "quantity": 0, "created_at": now_iso(), "updated_at": now_iso()}
+            await db.ingredients.insert_one(ing)
+            created += 1
+        if not ing:
+            continue
+        if l.unit_cost is not None:
+            await db.ingredients.update_one({"_id": ing["_id"]}, {"$set": {"cost_per_unit": l.unit_cost}})
+            ing["cost_per_unit"] = l.unit_cost
+        if supplier_id and not ing.get("supplier_id"):
+            await db.ingredients.update_one({"_id": ing["_id"]}, {"$set": {"supplier_id": supplier_id, "supplier_name": body.supplier_name or ""}})
+        await record_movement(p.tenant_id, ing, "carico", abs(l.qty), note=f"Fattura {body.supplier_name or ''}".strip())
+        received += 1
+    return {"ok": True, "created": created, "received": received}

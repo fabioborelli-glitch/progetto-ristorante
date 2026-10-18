@@ -79,3 +79,29 @@ async def deplete_for_order(tenant_id: str, lines, order_id: str = None):
                 await record_movement(tenant_id, ing, "vendita", -qty, note="Scarico da vendita", order_id=order_id)
     except Exception:
         logger.exception("deplete_for_order failed for tenant %s order %s", tenant_id, order_id)
+
+
+async def restore_for_order(tenant_id: str, order_id: str):
+    """Put back into stock whatever an order depleted, when the order is cancelled.
+    Reverses the actual 'vendita' movements so it is exact even if the recipe changed.
+    Idempotent: skips if a restore ('reso') already exists for this order."""
+    if not order_id:
+        return
+    try:
+        already = await db.stock_movements.find_one({"tenant_id": tenant_id, "order_id": order_id, "type": "reso"})
+        if already:
+            return
+        sold = await db.stock_movements.find({"tenant_id": tenant_id, "order_id": order_id, "type": "vendita"}).to_list(1000)
+        if not sold:
+            return
+        back = {}
+        for m in sold:
+            back[m["ingredient_id"]] = back.get(m["ingredient_id"], 0) + (m.get("delta") or 0)
+        ings = {i["_id"]: i for i in await db.ingredients.find(
+            {"tenant_id": tenant_id, "_id": {"$in": list(back.keys())}}).to_list(500)}
+        for ing_id, delta in back.items():
+            ing = ings.get(ing_id)
+            if ing and delta:
+                await record_movement(tenant_id, ing, "reso", -delta, note="Ripristino da annullo ordine", order_id=order_id)
+    except Exception:
+        logger.exception("restore_for_order failed for tenant %s order %s", tenant_id, order_id)

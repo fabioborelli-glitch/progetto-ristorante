@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { Plus, Search, Truck, ClipboardList, Pencil, Trash2, PackagePlus, PackageMinus, AlertTriangle, Users } from "lucide-react";
+import { Plus, Search, Truck, ClipboardList, Pencil, Trash2, PackagePlus, PackageMinus, AlertTriangle, Users, FileText, Loader2 } from "lucide-react";
 import { api, errMsg, fmtEur } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,7 @@ export default function Inventory() {
   const [recv, setRecv] = useState({ supplier_id: null, note: "", lines: [] });
   const [mov, setMov] = useState({ type: "carico", qty: "", note: "" });
   const [countOpen, setCountOpen] = useState(false);
+  const [invOpen, setInvOpen] = useState(false);
 
   const loadMeta = useCallback(async () => {
     try {
@@ -125,6 +126,7 @@ export default function Inventory() {
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" className="h-12" onClick={() => setSuppOpen(true)} data-testid="suppliers-btn"><Users size={16} className="mr-1" />Fornitori</Button>
             <Button variant="outline" className="h-12" onClick={() => setCountOpen(true)} data-testid="count-btn"><ClipboardList size={16} className="mr-1" />Conteggio</Button>
+            <Button variant="outline" className="h-12" onClick={() => setInvOpen(true)} data-testid="invoice-btn"><FileText size={16} className="mr-1" />Scansiona fattura</Button>
             <Button variant="outline" className="h-12" onClick={openReceive} data-testid="receive-btn"><Truck size={16} className="mr-1" />Registra consegna</Button>
             <Button className="h-12 px-6 bg-[#E03131] hover:bg-[#c42727]" onClick={openNew} data-testid="new-ingredient-btn"><Plus size={18} className="mr-2" />Nuovo ingrediente</Button>
           </div>
@@ -270,6 +272,7 @@ export default function Inventory() {
       <SuppliersSheet open={suppOpen} onOpenChange={setSuppOpen} suppliers={suppliers} reload={async () => setSuppliers((await api.get("/t/suppliers")).data)} canEdit={canEdit} />
       <ReceiveSheet open={recvOpen} onOpenChange={setRecvOpen} recv={recv} setRecv={setRecv} suppliers={suppliers} ingredients={list} submit={submitReceive} />
       <CountSheet open={countOpen} onOpenChange={setCountOpen} onDone={refresh} />
+      <InvoiceSheet open={invOpen} onOpenChange={setInvOpen} ingredients={list} cats={cats} onDone={() => { refresh(); loadMeta(); }} />
     </div>
   );
 }
@@ -410,6 +413,97 @@ function CountSheet({ open, onOpenChange, onDone }) {
             {visible.length === 0 && <div className="text-sm text-gray-400">Nessun ingrediente.</div>}
           </div>
           <Button className="w-full h-12 bg-[#E03131] hover:bg-[#c42727]" onClick={submit} data-testid="count-submit-btn"><ClipboardList size={18} className="mr-2" />Applica conteggio</Button>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function InvoiceSheet({ open, onOpenChange, ingredients, cats, onDone }) {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [supplier, setSupplier] = useState("");
+
+  const onFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLoading(true); setResult(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = (await api.post("/t/invoices/scan", fd, { headers: { "Content-Type": "multipart/form-data" } })).data;
+      setSupplier(r.supplier_name || "");
+      setResult({ ...r, lines: r.lines.map((l) => ({
+        ...l, qty: l.qty ?? "", unit: l.unit || "pz", unit_cost: l.unit_cost ?? "",
+        ingredient_id: l.ingredient_id || null, create_new: !l.ingredient_id, category: "Altro",
+      })) });
+      toast.success(`${r.lines.length} righe lette dalla fattura`);
+    } catch (err) { toast.error(errMsg(err)); } finally { setLoading(false); e.target.value = ""; }
+  };
+
+  const apply = async () => {
+    const lines = result.lines.filter((l) => parseFloat(l.qty) > 0 && (l.ingredient_id || l.create_new)).map((l) => ({
+      name: l.name, ingredient_id: l.ingredient_id || null, qty: parseFloat(l.qty), unit: l.unit || "pz",
+      unit_cost: l.unit_cost !== "" ? parseFloat(l.unit_cost) : null, category: l.category || "Altro", create_new: !l.ingredient_id && l.create_new,
+    }));
+    if (!lines.length) { toast.error("Nessuna riga valida da applicare"); return; }
+    try {
+      const r = (await api.post("/t/invoices/apply", { supplier_name: supplier, lines })).data;
+      toast.success(`Fattura applicata · ${r.received} caricati, ${r.created} nuovi`);
+      onOpenChange(false); setResult(null); onDone();
+    } catch (err) { toast.error(errMsg(err)); }
+  };
+
+  const upd = (idx, patch) => setResult({ ...result, lines: result.lines.map((l, j) => j === idx ? { ...l, ...patch } : l) });
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="sm:max-w-xl overflow-y-auto">
+        <SheetHeader><SheetTitle className="font-display text-2xl">Scansiona fattura</SheetTitle></SheetHeader>
+        <div className="space-y-4 mt-6" data-testid="invoice-form">
+          <p className="text-xs text-gray-500">Carica la foto di una fattura/DDT del fornitore: l'IA legge articoli, quantità e costi. Controlla e conferma: aggiorna i costi e carica le giacenze.</p>
+          <label className="block">
+            <div className="h-28 border-2 border-dashed border-gray-300 rounded-xl grid place-items-center text-sm text-gray-500 hover:border-[#E03131] hover:text-[#E03131] cursor-pointer transition-colors" data-testid="invoice-dropzone">
+              {loading ? <span className="flex items-center gap-2"><Loader2 size={18} className="animate-spin" />Lettura in corso…</span> : <span className="flex items-center gap-2"><FileText size={18} />Scegli la foto della fattura</span>}
+            </div>
+            <input type="file" accept="image/*" capture="environment" className="hidden" onChange={onFile} disabled={loading} data-testid="invoice-file-input" />
+          </label>
+
+          {result && (
+            <>
+              <div className="space-y-1"><Label>Fornitore</Label><Input className="h-11" value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="Nome fornitore" data-testid="invoice-supplier-input" /></div>
+              <div className="space-y-2" data-testid="invoice-lines">
+                {result.lines.map((l, idx) => (
+                  <div key={idx} className="border border-gray-100 rounded-lg p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-sm font-medium truncate">{l.name}</div>
+                      <Button variant="ghost" size="icon" onClick={() => setResult({ ...result, lines: result.lines.filter((_, j) => j !== idx) })}><Trash2 size={14} /></Button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <Input className="h-9" type="number" step="0.01" placeholder="Qtà" value={l.qty} onChange={(e) => upd(idx, { qty: e.target.value })} data-testid={`invoice-qty-${idx}`} />
+                      <Input className="h-9" placeholder="Unità" value={l.unit} onChange={(e) => upd(idx, { unit: e.target.value })} />
+                      <Input className="h-9" type="number" step="0.01" placeholder="€/u" value={l.unit_cost} onChange={(e) => upd(idx, { unit_cost: e.target.value })} data-testid={`invoice-cost-${idx}`} />
+                    </div>
+                    <Select value={l.ingredient_id || "new"} onValueChange={(v) => upd(idx, v === "new" ? { ingredient_id: null, create_new: true } : { ingredient_id: v, create_new: false })}>
+                      <SelectTrigger className="h-9 text-xs" data-testid={`invoice-match-${idx}`}><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="new">➕ Crea nuovo ingrediente</SelectItem>
+                        {ingredients.map((i) => <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    {!l.ingredient_id && (
+                      <Select value={l.category} onValueChange={(v) => upd(idx, { category: v })}>
+                        <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Categoria nuovo" /></SelectTrigger>
+                        <SelectContent>{cats.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                ))}
+                {result.lines.length === 0 && <div className="text-sm text-gray-400">Nessuna riga.</div>}
+              </div>
+              <Button className="w-full h-12 bg-[#E03131] hover:bg-[#c42727]" onClick={apply} data-testid="invoice-apply-btn"><PackagePlus size={18} className="mr-2" />Applica alla giacenza</Button>
+            </>
+          )}
         </div>
       </SheetContent>
     </Sheet>
