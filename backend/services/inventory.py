@@ -1,5 +1,8 @@
 """Magazzino / inventory helpers: auto depletion from sales and stock math."""
+import logging
 from core import db, new_id, now_iso
+
+logger = logging.getLogger("ristoos.inventory")
 
 DEFAULT_INV_CATEGORIES = [
     "Carne", "Pesce", "Verdura", "Frutta", "Latticini", "Uova", "Salumi",
@@ -19,18 +22,25 @@ def stock_value(ingredients) -> float:
 
 async def record_movement(tenant_id: str, ingredient: dict, mtype: str, delta: float,
                            note: str = "", set_to: float = None, order_id: str = None):
-    """Apply a stock change to an ingredient and log the movement.
-    delta is the signed change applied to quantity (unless set_to given for rettifica)."""
-    before = ingredient.get("quantity") or 0
+    """Apply a stock change atomically and log the movement.
+    For delta movements use $inc (no lost updates under concurrency).
+    For set_to (rettifica) read the fresh value and $set."""
+    cost = ingredient.get("cost_per_unit") or 0
     if set_to is not None:
+        fresh = await db.ingredients.find_one({"_id": ingredient["_id"]})
+        before = (fresh or ingredient).get("quantity") or 0
         after = set_to
         delta = round(after - before, 4)
+        await db.ingredients.update_one({"_id": ingredient["_id"]}, {"$set": {"quantity": round(after, 4), "updated_at": now_iso()}})
     else:
-        after = round(before + delta, 4)
-    cost = ingredient.get("cost_per_unit") or 0
-    await db.ingredients.update_one({"_id": ingredient["_id"]}, {"$set": {"quantity": after, "updated_at": now_iso()}})
+        updated = await db.ingredients.find_one_and_update(
+            {"_id": ingredient["_id"]},
+            {"$inc": {"quantity": round(delta, 4)}, "$set": {"updated_at": now_iso()}},
+            return_document=True)
+        after = round((updated or {}).get("quantity") or 0, 4)
+        before = round(after - delta, 4)
     mov = {"_id": new_id(), "tenant_id": tenant_id, "ingredient_id": ingredient["_id"],
-           "ingredient_name": ingredient.get("name", ""), "type": mtype, "delta": delta,
+           "ingredient_name": ingredient.get("name", ""), "type": mtype, "delta": round(delta, 4),
            "before": before, "after": after, "unit": ingredient.get("unit", ""),
            "cost_per_unit": cost, "value": round(abs(delta) * cost, 2), "note": note or "",
            "order_id": order_id, "created_at": now_iso()}
@@ -68,4 +78,4 @@ async def deplete_for_order(tenant_id: str, lines, order_id: str = None):
             if ing and qty:
                 await record_movement(tenant_id, ing, "vendita", -qty, note="Scarico da vendita", order_id=order_id)
     except Exception:
-        pass
+        logger.exception("deplete_for_order failed for tenant %s order %s", tenant_id, order_id)

@@ -8,6 +8,7 @@ from reportlab.pdfgen import canvas
 from core import db, new_id, now_iso, ser, tq, get_scoped_or_404, require_tenant, Principal
 from services.ws import hub
 from services.stations import resolve_station
+from services.inventory import deplete_for_order
 
 router = APIRouter(prefix="/t/bills", tags=["bills"])
 
@@ -163,6 +164,7 @@ async def add_item(bill_id: str, body: AddItem, p: Principal = Depends(require_t
              "total": round(price * qty, 2), "status": "nuovo" if body.send_to_kitchen else "servito",
              "source": "cassa", "created_at": now_iso(), "updated_at": now_iso()}
     await db.orders.insert_one(order)
+    await deplete_for_order(p.tenant_id, order["items"], order["_id"])
     line = {"key": f"{order['_id']}:0", "order_id": order["_id"], "item_id": item["_id"], "name": item["name"],
             "variant": body.variant, "qty": qty, "price": round(price, 2), "station_id": sid}
     res = await db.bills.find_one_and_update({"_id": bill_id}, {"$push": {"lines": line}}, return_document=True)

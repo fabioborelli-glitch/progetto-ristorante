@@ -39,6 +39,7 @@ async def update_supplier(sid: str, body: SupplierIn, p: Principal = Depends(req
 async def delete_supplier(sid: str, p: Principal = Depends(require_tenant("manager"))):
     await get_scoped_or_404(p, "suppliers", sid)
     await db.suppliers.delete_one(tq(p, {"_id": sid}))
+    await db.ingredients.update_many(tq(p, {"supplier_id": sid}), {"$set": {"supplier_id": None, "supplier_name": ""}})
     return {"ok": True}
 
 
@@ -80,6 +81,7 @@ class IngredientUpdate(BaseModel):
     supplier_id: Optional[str] = None
     supplier_name: Optional[str] = None
     not_in_pos: Optional[bool] = None
+    clear_supplier: bool = False
 
 
 @router.get("/ingredients")
@@ -140,11 +142,15 @@ async def ingredient_stats(p: Principal = Depends(require_tenant())):
 @router.post("/ingredients", status_code=201)
 async def create_ingredient(body: IngredientIn, p: Principal = Depends(require_tenant("manager"))):
     data = body.model_dump()
+    if data["unit"] not in UNITS:
+        raise HTTPException(status_code=400, detail="Unità di misura non valida")
     if data.get("supplier_id"):
         s = await db.suppliers.find_one(tq(p, {"_id": data["supplier_id"]}))
         if s:
             data["supplier_name"] = s["name"]
     qty = data.pop("quantity", 0)
+    if qty < 0:
+        raise HTTPException(status_code=400, detail="La giacenza iniziale non può essere negativa")
     doc = {"_id": new_id(), "tenant_id": p.tenant_id, **data, "quantity": 0, "created_at": now_iso(), "updated_at": now_iso()}
     await db.ingredients.insert_one(doc)
     if qty:
@@ -156,10 +162,15 @@ async def create_ingredient(body: IngredientIn, p: Principal = Depends(require_t
 @router.patch("/ingredients/{ing_id}")
 async def update_ingredient(ing_id: str, body: IngredientUpdate, p: Principal = Depends(require_tenant("manager"))):
     await get_scoped_or_404(p, "ingredients", ing_id)
-    upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    upd = {k: v for k, v in body.model_dump(exclude={"clear_supplier"}).items() if v is not None}
+    if upd.get("unit") and upd["unit"] not in UNITS:
+        raise HTTPException(status_code=400, detail="Unità di misura non valida")
     if upd.get("supplier_id"):
         s = await db.suppliers.find_one(tq(p, {"_id": upd["supplier_id"]}))
         upd["supplier_name"] = s["name"] if s else ""
+    if body.clear_supplier:
+        upd["supplier_id"] = None
+        upd["supplier_name"] = ""
     res = await db.ingredients.find_one_and_update(tq(p, {"_id": ing_id}), {"$set": upd}, return_document=True)
     return ser(res)
 
@@ -185,8 +196,12 @@ async def add_movement(ing_id: str, body: MovementIn, p: Principal = Depends(req
     if body.type not in ("carico", "scarico", "spreco", "rettifica", "reso"):
         raise HTTPException(status_code=400, detail="Tipo movimento non valido")
     if body.type == "rettifica":
+        if body.qty < 0:
+            raise HTTPException(status_code=400, detail="La giacenza non può essere negativa")
         await record_movement(p.tenant_id, ing, "rettifica", 0, note=body.note or "Correzione manuale", set_to=body.qty)
     else:
+        if body.qty <= 0:
+            raise HTTPException(status_code=400, detail="La quantità deve essere maggiore di zero")
         sign = 1 if body.type in ("carico", "reso") else -1
         await record_movement(p.tenant_id, ing, body.type, sign * abs(body.qty), note=body.note or "")
     return ser(await db.ingredients.find_one({"_id": ing_id}))

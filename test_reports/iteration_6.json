@@ -1,0 +1,56 @@
+{
+  "summary": "Iteration 6: tested the new MAGAZZINO (inventory) feature end to end. Backend: new tests/test_iteration6_inventory.py passes 17/17 when run serially (-n 0). It covers categories (20) and units (8), supplier CRUD with 404 after delete, ingredient create with initial stock + supplier_name + initial 'carico' movement, PATCH, stats (low/reorder/reorder_value/stock_value/waste_30d/last_count), the low/reorder/not_in_pos filters plus category and q search (name/supplier/barcode), every manual movement type with history, invalid type 400, receive (multiple lines + cost update, unknown id skipped, empty 400), count session, recipe PUT/GET + food-cost, auto-depletion from waiter order (8->7.4 with 2x0.3) and QR order, an order without a recipe is not blocked, deleting an ingredient pulls it from recipes, staff permissions (403 on create/patch/delete/receive/supplier, 200 on movement) and tenant isolation (new tenant sees nothing, 404 on foreign ingredient, receive ignores foreign ids). Frontend (Playwright): owner login, nav-magazzino goes to /magazzino, stats cards, supplier create/delete, ingredient create with category/unit/cost/qty/min/par/barcode/supplier, all filters, category tabs, barcode and supplier search, the 5 movement types updating giacenza and history live, Registra consegna with 2 lines, the 'Prepara ordine' prefill (par - qty), Menu > edit Tiramisù > Ricetta add ingredient 0.25 + save showing 'Food cost 2,50 € · 35.7%'. A waiter order then decremented stock 7 -> 6.5. Main gaps: Cassa sales do NOT deplete stock, staff cannot register movements in the UI, and there is no UI for the count session or for updating cost on a delivery.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/t/bills/{bill_id}/items (Cassa)", "issue": "Does not call deplete_for_order. Selling a dish from the Cassa/POS does not reduce stock, even though the Magazzino page says 'Si scarica da solo con le vendite della cassa'. Verified: Tiramisù with a 0.25 kg recipe, cassa add-item qty 1, stock stayed 6.5. Only waiter (POST /t/orders) and QR (public orders) deplete.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "services/inventory.record_movement", "issue": "Read-modify-write race: it computes after = before + delta from a stale document and uses $set instead of $inc. 10 parallel 'scarico 1' on qty 100 gave 91 instead of 90 (lost update). Concurrent orders from many devices (QR + waiters) will drift. Use $inc for delta movements, or find_one_and_update with return_document to get before/after atomically."},
+      {"endpoint": "POST /api/t/ingredients/{id}/movement", "issue": "No validation: qty 0 is accepted, a negative scarico is abs()'d, and stock can go negative (scarico 500 on 91 -> -409). At least reject qty<=0 for non-rettifica and rettifica<0."},
+      {"endpoint": "POST/PATCH /api/t/ingredients", "issue": "unit and category are not validated against UNITS or the categories list (unit='banana' was accepted). Negative initial quantity is accepted (-5 is recorded as a 'carico' of -5)."},
+      {"endpoint": "PUT /api/t/menu/items/{id}/recipe", "issue": "ingredient_id is not validated as existing in the tenant (an unknown or foreign id is stored). Harmless for depletion (it filters by tenant) but leaves orphan lines that the UI shows as '—'."},
+      {"endpoint": "PATCH /api/t/orders/{id}/status annullato", "issue": "Cancelling an order does not restore the stock that was depleted (a 'vendita' movement with order_id exists, so a reversal is possible). Product decision, but it should be documented or implemented."},
+      {"endpoint": "DELETE /api/t/suppliers/{id}", "issue": "Ingredients keep a stale supplier_id/supplier_name after the supplier is deleted (verified in the UI: row still shows the deleted supplier). PATCH ingredient also cannot clear supplier_id, because None is filtered out."},
+      {"endpoint": "GET /api/t/ingredients?filter=low vs UI dot", "issue": "Inconsistency: 'low' uses qty <= min, but the row's red dot/red qty uses qty < min. An item exactly at min shows up under 'Scorta bassa' with a green dot."},
+      {"endpoint": "pytest parallel", "issue": "test_stats_reflect_values compares global tenant stats before and after, so it is flaky under pytest-xdist (pytest.ini uses -n with loadscope). Run with -n 0."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Inventory.jsx ingredient rows (staff)", "issue": "Rows only open when canEdit (owner/manager). Staff cannot register any movement (spreco/scarico) in the UI, even though the backend allows it and the feature requires it. The subtitle 'Tocca un ingrediente per correggere la giacenza' does nothing for staff. Open a read-only sheet with just the movement section for staff.", "selector": "[data-testid^=ingredient-row-]", "priority": "HIGH"},
+      {"component": "Inventory.jsx", "issue": "There is no UI for 'Sessione di conteggio' (POST /t/inventory/count is unused; the ClipboardList icon is imported but not used). The requested feature can only be reached through the API.", "selector": "n/a", "priority": "HIGH"},
+      {"component": "ReceiveSheet", "issue": "There is no cost-per-unit input per line, so 'Registra consegna puo' aggiornare il costo' is not possible from the UI. The supplier is selected but not sent anywhere useful (the backend ignores supplier_id on receive).", "selector": "[data-testid=receive-form]", "priority": "MEDIUM"},
+      {"component": "ReceiveSheet / Prepara ordine", "issue": "The ingredient picker and reorderList use the current filtered `list` (category/filter/search). With a filter active, you cannot add other ingredients and the reorder prefill misses items.", "selector": "[data-testid=receive-add-select]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Magazzino initial load", "issues": ["No loading state: 'Nessun ingrediente.' flashes while the list is loading (200ms debounce + fetch), even though stats already show stock value."]},
+      {"screen": "Magazzino mobile 390px", "issues": ["The 21 category chips wrap into many rows and push the list far below the fold. Use a horizontally scrollable chip row.", "The bottom nav now has 10 items. Labels (Prenotazioni, QR Tavoli, Impostazioni) are cramped and touch each other."]},
+      {"screen": "Ingredient sheet", "issues": ["Sonner toasts (top-right) cover the Sheet title and close X after every movement.", "Supplier edit/delete icon buttons, category tabs (CatTab) and the receive supplier select have no data-testid."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration6_inventory.py", "/app/test_reports/pytest/pytest_iter6.xml"],
+  "action_items": [
+    "Call deplete_for_order in bills.py add_item (Cassa sales), e.g. await deplete_for_order(p.tenant_id, order['items'], order['_id']) after insert.",
+    "Let staff open the ingredient sheet in read-only mode with the movement section (Applica) available.",
+    "Add a 'Sessione di conteggio' UI (list all ingredients with counted_qty inputs -> POST /t/inventory/count).",
+    "Add a cost_per_unit input per line in ReceiveSheet and send it.",
+    "Make record_movement atomic ($inc / find_one_and_update) to avoid lost updates under concurrent orders.",
+    "Validate movement qty (>0; rettifica >=0), unit/category whitelist, recipe ingredient existence; clear supplier_name on ingredients when a supplier is deleted.",
+    "Align the low-stock rule (<= vs <) between backend filter/stats and the UI row indicator."
+  ],
+  "critical_code_review_comments": [
+    "deplete_for_order swallows all exceptions silently (except: pass). This is OK for not blocking sales, but log them (logger.exception) so failures are visible.",
+    "ingredient_stats loads all ingredients and 30 days of movements into memory. Fine for an MVP; use aggregation later.",
+    "waste_30d counts negative 'rettifica' as waste. The label says 'scarti e rettifiche', so this is consistent, but a large count correction inflates 'Sprechi'.",
+    "receive_goods accepts supplier_id but neither stores it on the movement nor creates a delivery record, so there is no delivery history per supplier."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration6_inventory.py"],
+  "success_rate": {"backend": "100% of the new tests (17/17, serial), with 1 HIGH functional gap (Cassa does not deplete) and several validation/race minors", "frontend": "~80% (core owner flows work; staff movements, count session and receive cost-update are missing in the UI)"},
+  "test_credentials": "owner@trattoria-demo.it / Demo2026!, fabio.borelli@icloud.com / RistoOS2026! (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "All TEST_ ingredients/suppliers are deleted. The Tiramisù and Acqua frizzante recipes were reset to empty. The main agent's Pizza Margherita -> Pomodoro 0.3 recipe is kept. Pomodoro stock is now 9.4 (+2 from the UI receive test). Created and deactivated tenant test-inv-*. Deleted all test_staff* users. A waiter order on D3 was created and cancelled; a D3 bill was opened and deleted.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && REACT_APP_BACKEND_URL=<url> python -m pytest tests/test_iteration6_inventory.py -q -n 0 (serial; the stats test is sensitive to parallel runs). The UI uses Radix Selects: click the trigger testid, wait 300ms, then get_by_role('option', name=...). Movement options are labelled 'Carico (+)', 'Scarico (−)' (unicode minus), 'Spreco (−)', 'Reso (+)', 'Conteggio (=)'. Retest: Cassa add-item depletion, staff movement UI, count session UI, receive cost input.",
+  "rca of the issue": "Cassa not depleting: bills.py add_item builds and inserts its own order document (source 'cassa') and never imports or calls services.inventory.deplete_for_order. Only tenant.create_waiter_order and public.place_order were wired. Repro: set a recipe on a dish, open a bill, POST /t/bills/{id}/items, and the ingredient quantity does not change. Fix: call deplete_for_order(p.tenant_id, order['items'], order['_id']) after db.orders.insert_one(order)."
+}

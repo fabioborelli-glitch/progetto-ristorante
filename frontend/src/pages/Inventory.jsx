@@ -33,6 +33,7 @@ export default function Inventory() {
   const [recvOpen, setRecvOpen] = useState(false);
   const [recv, setRecv] = useState({ supplier_id: null, note: "", lines: [] });
   const [mov, setMov] = useState({ type: "carico", qty: "", note: "" });
+  const [countOpen, setCountOpen] = useState(false);
 
   const loadMeta = useCallback(async () => {
     try {
@@ -108,7 +109,7 @@ export default function Inventory() {
   };
   const openReceive = () => { setRecv({ supplier_id: null, note: "", lines: [] }); setRecvOpen(true); };
   const submitReceive = async () => {
-    const lines = recv.lines.filter((l) => l.qty > 0).map((l) => ({ ingredient_id: l.ingredient_id, qty: parseFloat(l.qty) }));
+    const lines = recv.lines.filter((l) => l.qty > 0).map((l) => ({ ingredient_id: l.ingredient_id, qty: parseFloat(l.qty), ...(l.cost !== "" && l.cost != null ? { cost_per_unit: parseFloat(l.cost) } : {}) }));
     if (!lines.length) { toast.error("Aggiungi almeno un articolo"); return; }
     try { await api.post("/t/inventory/receive", { supplier_id: recv.supplier_id, note: recv.note, lines }); toast.success("Merce ricevuta"); setRecvOpen(false); refresh(); } catch (err) { toast.error(errMsg(err)); }
   };
@@ -123,6 +124,7 @@ export default function Inventory() {
         {canEdit && (
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" className="h-12" onClick={() => setSuppOpen(true)} data-testid="suppliers-btn"><Users size={16} className="mr-1" />Fornitori</Button>
+            <Button variant="outline" className="h-12" onClick={() => setCountOpen(true)} data-testid="count-btn"><ClipboardList size={16} className="mr-1" />Conteggio</Button>
             <Button variant="outline" className="h-12" onClick={openReceive} data-testid="receive-btn"><Truck size={16} className="mr-1" />Registra consegna</Button>
             <Button className="h-12 px-6 bg-[#E03131] hover:bg-[#c42727]" onClick={openNew} data-testid="new-ingredient-btn"><Plus size={18} className="mr-2" />Nuovo ingrediente</Button>
           </div>
@@ -151,16 +153,16 @@ export default function Inventory() {
         ))}
       </div>
 
-      <div className="flex flex-wrap gap-2" data-testid="inventory-cat-tabs">
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 md:flex-wrap md:overflow-visible" data-testid="inventory-cat-tabs">
         <CatTab active={activeCat === "all"} onClick={() => setActiveCat("all")}>Tutti</CatTab>
         {cats.map((c) => <CatTab key={c} active={activeCat === c} onClick={() => setActiveCat(c)}>{c}{stats?.by_category?.[c] ? ` ${stats.by_category[c]}` : ""}</CatTab>)}
       </div>
 
       <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100" data-testid="ingredient-list">
         {list.map((i) => {
-          const low = (i.min_stock || 0) > 0 && (i.quantity || 0) < (i.min_stock || 0);
+          const low = (i.min_stock || 0) > 0 && (i.quantity || 0) <= (i.min_stock || 0);
           return (
-            <button key={i.id} onClick={() => canEdit && openEdit(i)} data-testid={`ingredient-row-${i.id}`}
+            <button key={i.id} onClick={() => openEdit(i)} data-testid={`ingredient-row-${i.id}`}
               className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors">
               <div className="flex items-center gap-3 min-w-0">
                 <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${low ? "bg-red-500" : "bg-emerald-500"}`} />
@@ -183,6 +185,7 @@ export default function Inventory() {
       <Sheet open={itemOpen} onOpenChange={setItemOpen}>
         <SheetContent className="sm:max-w-lg overflow-y-auto">
           <SheetHeader><SheetTitle className="font-display text-2xl">{editing ? form.name : "Nuovo ingrediente"}</SheetTitle></SheetHeader>
+          {canEdit ? (
           <form onSubmit={save} className="space-y-4 mt-6" data-testid="ingredient-form">
             <div className="space-y-1"><Label>Nome</Label><Input className="h-11" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required data-testid="ingredient-name-input" /></div>
             <div className="grid grid-cols-2 gap-3">
@@ -219,6 +222,13 @@ export default function Inventory() {
             <label className="flex items-center gap-2 text-sm"><Switch checked={!!form.not_in_pos} onCheckedChange={(v) => setForm({ ...form, not_in_pos: v })} data-testid="ingredient-notpos-switch" />Non collegato alla cassa</label>
             <Button type="submit" className="w-full h-12 bg-[#E03131] hover:bg-[#c42727]" data-testid="ingredient-submit-btn">{editing ? "Salva modifiche" : "Crea ingrediente"}</Button>
           </form>
+          ) : editing && (
+            <div className="mt-6 text-sm text-gray-600 space-y-1" data-testid="ingredient-readonly">
+              <div>Categoria: <b>{form.category}</b></div>
+              <div>Costo: <b>{form.cost_per_unit ? `${fmtEur(form.cost_per_unit)}/${form.unit}` : "—"}</b></div>
+              {form.supplier_name && <div>Fornitore: <b>{form.supplier_name}</b></div>}
+            </div>
+          )}
 
           {editing && (
             <div className="mt-6 pt-6 border-t border-gray-200 space-y-4">
@@ -251,7 +261,7 @@ export default function Inventory() {
                 ))}
                 {movements.length === 0 && <div className="text-xs text-gray-400">Nessun movimento.</div>}
               </div>
-              <Button type="button" variant="outline" className="w-full h-11 text-red-600 border-red-200" onClick={() => del(editing)} data-testid="ingredient-delete-btn"><Trash2 size={16} className="mr-2" />Elimina ingrediente</Button>
+              <Button type="button" variant="outline" className="w-full h-11 text-red-600 border-red-200" onClick={() => del(editing)} data-testid="ingredient-delete-btn" disabled={!canEdit} hidden={!canEdit}><Trash2 size={16} className="mr-2" />Elimina ingrediente</Button>
             </div>
           )}
         </SheetContent>
@@ -259,6 +269,7 @@ export default function Inventory() {
 
       <SuppliersSheet open={suppOpen} onOpenChange={setSuppOpen} suppliers={suppliers} reload={async () => setSuppliers((await api.get("/t/suppliers")).data)} canEdit={canEdit} />
       <ReceiveSheet open={recvOpen} onOpenChange={setRecvOpen} recv={recv} setRecv={setRecv} suppliers={suppliers} ingredients={list} submit={submitReceive} />
+      <CountSheet open={countOpen} onOpenChange={setCountOpen} onDone={refresh} />
     </div>
   );
 }
@@ -276,7 +287,7 @@ function StatCard({ label, value, sub, tone, action, testid }) {
 }
 
 function CatTab({ active, onClick, children }) {
-  return <button onClick={onClick} className={`px-4 h-10 rounded-full text-sm font-medium border transition-colors ${active ? "bg-gray-900 text-white border-gray-900" : "bg-white border-gray-200 hover:bg-gray-50"}`}>{children}</button>;
+  return <button onClick={onClick} className={`shrink-0 whitespace-nowrap px-4 h-10 rounded-full text-sm font-medium border transition-colors ${active ? "bg-gray-900 text-white border-gray-900" : "bg-white border-gray-200 hover:bg-gray-50"}`}>{children}</button>;
 }
 
 function SuppliersSheet({ open, onOpenChange, suppliers, reload, canEdit }) {
@@ -327,7 +338,7 @@ function ReceiveSheet({ open, onOpenChange, recv, setRecv, suppliers, ingredient
   const add = (id) => {
     const ing = ingredients.find((i) => i.id === id);
     if (!ing || recv.lines.some((l) => l.ingredient_id === id)) return;
-    setRecv({ ...recv, lines: [...recv.lines, { ingredient_id: id, name: ing.name, unit: ing.unit, qty: 1 }] });
+    setRecv({ ...recv, lines: [...recv.lines, { ingredient_id: id, name: ing.name, unit: ing.unit, qty: 1, cost: "" }] });
     setPick("");
   };
   return (
@@ -351,14 +362,54 @@ function ReceiveSheet({ open, onOpenChange, recv, setRecv, suppliers, ingredient
             {recv.lines.map((l, idx) => (
               <div key={l.ingredient_id} className="flex items-center gap-2">
                 <div className="flex-1 text-sm truncate">{l.name}</div>
-                <Input className="h-10 w-28" type="number" step="0.01" value={l.qty} onChange={(e) => setRecv({ ...recv, lines: recv.lines.map((x, j) => j === idx ? { ...x, qty: e.target.value } : x) })} data-testid={`receive-qty-${idx}`} />
-                <span className="text-xs text-gray-400 w-8">{l.unit}</span>
+                <Input className="h-10 w-20" type="number" step="0.01" value={l.qty} onChange={(e) => setRecv({ ...recv, lines: recv.lines.map((x, j) => j === idx ? { ...x, qty: e.target.value } : x) })} data-testid={`receive-qty-${idx}`} />
+                <span className="text-xs text-gray-400 w-6">{l.unit}</span>
+                <Input className="h-10 w-20" type="number" step="0.01" placeholder="€/u" value={l.cost ?? ""} onChange={(e) => setRecv({ ...recv, lines: recv.lines.map((x, j) => j === idx ? { ...x, cost: e.target.value } : x) })} data-testid={`receive-cost-${idx}`} />
                 <Button variant="ghost" size="icon" onClick={() => setRecv({ ...recv, lines: recv.lines.filter((_, j) => j !== idx) })}><Trash2 size={15} /></Button>
               </div>
             ))}
             {recv.lines.length === 0 && <div className="text-sm text-gray-400">Nessun articolo aggiunto.</div>}
           </div>
           <Button className="w-full h-12 bg-[#E03131] hover:bg-[#c42727]" onClick={submit} data-testid="receive-submit-btn"><PackagePlus size={18} className="mr-2" />Carica in magazzino</Button>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function CountSheet({ open, onOpenChange, onDone }) {
+  const [ings, setIngs] = useState([]);
+  const [counts, setCounts] = useState({});
+  const [q, setQ] = useState("");
+  useEffect(() => {
+    if (open) api.get("/t/ingredients").then((r) => { setIngs(r.data); setCounts(Object.fromEntries(r.data.map((i) => [i.id, i.quantity ?? 0]))); }).catch(() => {});
+  }, [open]);
+  const submit = async () => {
+    const lines = ings.filter((i) => parseFloat(counts[i.id]) !== i.quantity).map((i) => ({ ingredient_id: i.id, counted_qty: parseFloat(counts[i.id]) || 0 }));
+    try {
+      const r = (await api.post("/t/inventory/count", { lines: ings.map((i) => ({ ingredient_id: i.id, counted_qty: parseFloat(counts[i.id]) || 0 })) })).data;
+      toast.success(`Conteggio applicato · ${r.adjusted} rettifiche`); onOpenChange(false); onDone();
+    } catch (err) { toast.error(errMsg(err)); }
+  };
+  const visible = q ? ings.filter((i) => i.name.toLowerCase().includes(q.toLowerCase())) : ings;
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="sm:max-w-lg overflow-y-auto">
+        <SheetHeader><SheetTitle className="font-display text-2xl">Sessione di conteggio</SheetTitle></SheetHeader>
+        <div className="space-y-4 mt-6" data-testid="count-form">
+          <p className="text-xs text-gray-500">Conta la merce e inserisci le quantità reali. Le differenze diventano rettifiche automatiche.</p>
+          <Input className="h-11" placeholder="Cerca ingrediente" value={q} onChange={(e) => setQ(e.target.value)} data-testid="count-search" />
+          <div className="space-y-2 max-h-[55vh] overflow-y-auto">
+            {visible.map((i) => (
+              <div key={i.id} className="flex items-center gap-2">
+                <div className="flex-1 text-sm truncate">{i.name}<span className="text-xs text-gray-400"> (att. {i.quantity ?? 0})</span></div>
+                <Input className="h-10 w-24" type="number" step="0.01" value={counts[i.id] ?? ""} onChange={(e) => setCounts({ ...counts, [i.id]: e.target.value })} data-testid={`count-qty-${i.id}`} />
+                <span className="text-xs text-gray-400 w-6">{i.unit}</span>
+              </div>
+            ))}
+            {visible.length === 0 && <div className="text-sm text-gray-400">Nessun ingrediente.</div>}
+          </div>
+          <Button className="w-full h-12 bg-[#E03131] hover:bg-[#c42727]" onClick={submit} data-testid="count-submit-btn"><ClipboardList size={18} className="mr-2" />Applica conteggio</Button>
         </div>
       </SheetContent>
     </Sheet>

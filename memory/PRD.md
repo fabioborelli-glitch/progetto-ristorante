@@ -68,6 +68,21 @@ Scelte utente (giugno 2026): MVP = **Prenotazioni + piantina sala** e **Menu dig
 - App nativa camerieri, CRM/fidelity, AI suggerimenti menu
 
 ## Test
-- Report: /app/test_reports/iteration_1.json … iteration_5.json
+- Report: /app/test_reports/iteration_1.json … iteration_6.json
 - Suite: `cd /app/backend && python -m pytest tests/ -q` (test email possono dare 503 per rate-limit del proxy)
 - Credenziali: /app/memory/test_credentials.md
+
+## 2026-10-18 — Fase 1: MAGAZZINO (implementato)
+Replica a fasi della piattaforma BaliFlow (fuoricitta) dentro RistoOS. Fonte dati utente: BaliFlow CRM (app.baliflowagency.com, login online@fuoricitta.eu) — 770 ingredienti, ~140 piatti, fornitori.
+Prod target: https://ristoos.emergent.host (super-admin fabio.borelli@icloud.com).
+Implementato e testato (iteration_6):
+- Backend: routers/inventory.py, services/inventory.py. Collezioni: ingredients, suppliers, stock_movements, recipes, inventory_counts.
+- Ingredienti (categoria/unità/costo/fornitore/giacenza/min/par/barcode/not_in_pos), fornitori CRUD, movimenti (carico/scarico/spreco/reso/rettifica) atomici con $inc, registra consegna (carico multiplo + aggiorna costo), sessione di conteggio, ricetta piatto→ingredienti, food cost per piatto, statistiche (da riordinare/scorta bassa/sprechi 30gg/valore magazzino).
+- Scarico automatico dal venduto: comanda cameriere, QR e CASSA (bills.add_item).
+- Frontend: pages/Inventory.jsx (/magazzino), ricetta+food cost in MenuManager, nav Magazzino.
+- Permessi: staff può registrare movimenti (sheet read-only), manager/owner gestiscono tutto.
+TODO Fase 1 rimanenti:
+- Annullo ordine NON ristorna scorta (decisione prodotto, non implementato).
+- IMPORT dati reali: 770 ingredienti + fornitori + ~140 piatti da BaliFlow → RistoOS prod (da fare dopo redeploy).
+- Redeploy produzione con il nuovo codice prima dell'import.
+Prossime fasi richieste dall'utente (replica BaliFlow completa): food cost page, fatture OCR, fornitori avanzati, conto economico, incassi, conversazioni IA WhatsApp, CRM/clienti, base conoscenza, analisi.
